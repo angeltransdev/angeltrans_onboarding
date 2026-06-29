@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Environment — NEVER commit secrets
+server/.env
+client/.env
+.env
+
+# Build output
+client/dist/
+
+# Generated PDFs (large binary files, server-local)
+server/pdfs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
