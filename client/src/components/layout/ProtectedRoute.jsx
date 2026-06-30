@@ -12,6 +12,10 @@ export const ProtectedRoute = ({ children, roles = [] }) => {
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;
-  if (roles.length && !roles.includes(user.role)) return <Navigate to="/unauthorized" replace />;
+  const hrRoles = ["hr_admin", "owner"];
+  const hasAccess = !roles.length ||
+    roles.includes(user.role) ||
+    (user.isHrAdmin && roles.some(r => hrRoles.includes(r)));
+  if (!hasAccess) return <Navigate to="/unauthorized" replace />;
   return children;
 };

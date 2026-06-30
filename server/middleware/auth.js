@@ -13,7 +13,8 @@ const authenticate = (req, res, next) => {
 };
 
 const requireHR = (req, res, next) => {
-  if (!['hr_admin','owner'].includes(req.user?.role))
+  const u = req.user;
+  if (!['hr_admin','owner'].includes(u?.role) && !u?.isHrAdmin)
     return res.status(403).json({ message: 'HR access required.' });
   next();
 };

@@ -13,7 +13,7 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ message: 'Email and password are required.' });
   try {
     const { rows } = await db.query(
-      'SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]
+      'SELECT *, is_hr_admin AS "isHrAdmin" FROM users WHERE email = $1', [email.toLowerCase().trim()]
     );
     const user = rows[0];
     if (!user || !user.password_hash)
@@ -24,7 +24,7 @@ router.post('/login', async (req, res) => {
     if (!valid)
       return res.status(401).json({ message: 'Invalid email or password.' });
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, role: user.role },
+      { id: user.id, name: user.name, email: user.email, role: user.role, isHrAdmin: user.isHrAdmin || false },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );

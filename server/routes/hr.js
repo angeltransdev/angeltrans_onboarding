@@ -493,9 +493,12 @@ router.put('/settings', requireOwner, async (req, res) => {
 // ── GET /api/hr/admins ────────────────────────────────────────────────────────
 router.get('/admins', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT id, name, email, role FROM users WHERE role IN ('hr_admin','owner') ORDER BY created_at`
-    );
+    const { rows } = await db.query(`
+      SELECT id, name, email, role, is_hr_admin AS "isHrAdmin"
+      FROM users
+      WHERE role IN ('hr_admin','owner') OR is_hr_admin = TRUE
+      ORDER BY created_at
+    `);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
@@ -510,17 +513,18 @@ router.post('/admins', requireOwner, async (req, res) => {
     const existing = await db.query('SELECT id, name, role FROM users WHERE email=$1', [email.toLowerCase()]);
     if (existing.rows[0]) {
       const u = existing.rows[0];
-      // If the existing user is an employee, offer to promote instead of blocking
+      // Existing employee → grant dual HR access without changing their employee role
       if (u.role === 'employee') {
         return res.status(409).json({
           message: `${u.name} is already in the system as an employee.`,
-          canPromote: true,
+          canGrant: true,
           userId: u.id,
           userName: u.name,
         });
       }
       return res.status(409).json({ message: 'A user with this email already exists.' });
     }
+    // Brand-new user — create a pure HR admin account
     const token  = crypto.randomBytes(32).toString('hex');
     const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const validRole = ['hr_admin','owner'].includes(role) ? role : 'hr_admin';
@@ -544,29 +548,24 @@ router.post('/admins', requireOwner, async (req, res) => {
   }
 });
 
-// ── POST /api/hr/admins/promote/:id (owner only) ──────────────────────────────
-router.post('/admins/promote/:id', requireOwner, async (req, res) => {
+// ── POST /api/hr/admins/grant/:id (owner only — grant HR access to existing employee) ──
+router.post('/admins/grant/:id', requireOwner, async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM users WHERE id=$1 AND role=$2', [req.params.id, 'employee']);
-    if (!rows[0]) return res.status(404).json({ message: 'Employee not found or already an admin.' });
-    const validRole = ['hr_admin','owner'].includes(req.body.role) ? req.body.role : 'hr_admin';
-    await db.query(
-      `UPDATE users SET role=$1, status='Active', updated_at=NOW() WHERE id=$2`,
-      [validRole, rows[0].id]
-    );
-    // Notify them of their new access (fire-and-forget)
+    if (!rows[0]) return res.status(404).json({ message: 'Employee not found.' });
+    await db.query(`UPDATE users SET is_hr_admin=TRUE, updated_at=NOW() WHERE id=$1`, [rows[0].id]);
     sendEmail({
       to: rows[0].email,
       subject: 'Angel Trans HR Portal — You now have HR Admin access',
       html: `<p>Hi ${rows[0].name},</p>
-             <p>Your account has been upgraded to <strong>HR Admin</strong> on the Angel Trans HR Portal.</p>
-             <p>You can now log in at <a href="${process.env.CLIENT_URL}/hr/login">${process.env.CLIENT_URL}/hr/login</a> using your existing password.</p>
+             <p>You have been granted <strong>HR Admin access</strong> on the Angel Trans HR Portal.</p>
+             <p>Log in at <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a> with your existing password. You will see a button to switch between your <strong>Employee Portal</strong> and the <strong>HR Admin Portal</strong>.</p>
              <p>— Angel Trans LLC</p>`
-    }).catch(e => console.warn('Promote email failed:', e.message));
-    logActivity({ userId: rows[0].id, actorId: req.user.id, eventType: 'role_promoted', description: `Promoted to ${validRole} by ${req.user.name}` });
-    res.json({ message: `${rows[0].name} has been promoted to HR Admin.` });
+    }).catch(e => console.warn('Grant email failed:', e.message));
+    logActivity({ userId: rows[0].id, actorId: req.user.id, eventType: 'hr_access_granted', description: `HR admin access granted by ${req.user.name}` });
+    res.json({ message: `HR Admin access granted to ${rows[0].name}.` });
   } catch (err) {
-    console.error('Promote error:', err);
+    console.error('Grant HR access error:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -576,6 +575,13 @@ router.delete('/admins/:id', requireOwner, async (req, res) => {
   try {
     if (req.params.id === req.user.id)
       return res.status(400).json({ message: 'You cannot remove yourself.' });
+    const { rows } = await db.query('SELECT role, is_hr_admin FROM users WHERE id=$1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ message: 'User not found.' });
+    if (rows[0].role === 'employee') {
+      // Dual-role employee — just revoke HR access, keep their employee account
+      await db.query(`UPDATE users SET is_hr_admin=FALSE, updated_at=NOW() WHERE id=$1`, [req.params.id]);
+      return res.json({ message: 'HR access revoked. Employee account remains active.' });
+    }
     await db.query(`DELETE FROM users WHERE id=$1 AND role IN ('hr_admin','owner')`, [req.params.id]);
     res.json({ message: 'Admin removed.' });
   } catch (err) {

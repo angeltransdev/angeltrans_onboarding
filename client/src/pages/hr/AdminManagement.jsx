@@ -11,8 +11,8 @@ export default function AdminManagement() {
   const [adding, setAdding] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
-  const [promoteCandidate, setPromoteCandidate] = useState(null); // { userId, userName }
-  const [promoting, setPromoting] = useState(false);
+  const [grantCandidate, setGrantCandidate] = useState(null); // { userId, userName }
+  const [granting, setGranting] = useState(false);
 
   const fetchAdmins = () => {
     api.get("/hr/admins").then(r => setAdmins(r.data)).catch(()=>{}).finally(()=>setLoading(false));
@@ -20,15 +20,15 @@ export default function AdminManagement() {
   useEffect(fetchAdmins, []);
 
   const handleAdd = async (e) => {
-    e.preventDefault(); setError(""); setPromoteCandidate(null); setAdding(true);
+    e.preventDefault(); setError(""); setGrantCandidate(null); setAdding(true);
     try {
       await api.post("/hr/admins", form);
       setForm({ name:"", email:"", role:"hr_admin" });
       setShowForm(false); fetchAdmins();
     } catch(err) {
       const data = err.response?.data;
-      if (err.response?.status === 409 && data?.canPromote) {
-        setPromoteCandidate({ userId: data.userId, userName: data.userName, role: form.role });
+      if (err.response?.status === 409 && data?.canGrant) {
+        setGrantCandidate({ userId: data.userId, userName: data.userName });
         setError(data.message);
       } else {
         setError(data?.message || "Failed to add admin.");
@@ -37,20 +37,20 @@ export default function AdminManagement() {
     finally { setAdding(false); }
   };
 
-  const handlePromote = async () => {
-    if (!promoteCandidate) return;
-    setPromoting(true); setError("");
+  const handleGrant = async () => {
+    if (!grantCandidate) return;
+    setGranting(true); setError("");
     try {
-      const res = await api.post(`/hr/admins/promote/${promoteCandidate.userId}`, { role: promoteCandidate.role });
-      setPromoteCandidate(null);
+      const res = await api.post(`/hr/admins/grant/${grantCandidate.userId}`);
+      setGrantCandidate(null);
       setForm({ name:"", email:"", role:"hr_admin" });
       setShowForm(false);
       fetchAdmins();
       alert(res.data.message);
     } catch(err) {
-      setError(err.response?.data?.message || "Promotion failed.");
+      setError(err.response?.data?.message || "Failed to grant access.");
     } finally {
-      setPromoting(false);
+      setGranting(false);
     }
   };
 
@@ -86,24 +86,24 @@ export default function AdminManagement() {
                 <p className="text-error text-body-md">{error}</p>
               </div>
             )}
-            {promoteCandidate && (
+            {grantCandidate && (
               <div className="mb-4 p-4 bg-surface-container rounded-xl border border-outline-variant flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <span className="material-symbols-outlined text-primary text-2xl">manage_accounts</span>
                   <div>
-                    <p className="text-body-md font-semibold text-on-surface">Promote existing employee?</p>
-                    <p className="text-body-sm text-secondary">
-                      {promoteCandidate.userName} already has an employee account. Promoting will give them HR Admin access using their existing password — no new invite needed.
+                    <p className="text-body-md font-semibold text-on-surface">Grant HR access to existing employee?</p>
+                    <p className="text-body-sm text-secondary mt-0.5">
+                      <strong>{grantCandidate.userName}</strong> already has an employee account. Granting HR access lets them use both the Employee Portal and the HR Portal — they keep their existing password and can switch between views after login.
                     </p>
                   </div>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button type="button" onClick={() => { setPromoteCandidate(null); setError(""); }}
+                  <button type="button" onClick={() => { setGrantCandidate(null); setError(""); }}
                     className="btn-secondary text-sm">Cancel</button>
-                  <button type="button" onClick={handlePromote} disabled={promoting}
+                  <button type="button" onClick={handleGrant} disabled={granting}
                     className="btn-primary text-sm flex items-center gap-2">
-                    {promoting && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                    {promoting ? "Promoting..." : `Promote ${promoteCandidate.userName}`}
+                    {granting && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    {granting ? "Granting..." : `Grant HR Access`}
                   </button>
                 </div>
               </div>
@@ -168,9 +168,13 @@ export default function AdminManagement() {
                     </td>
                     <td className="px-6 py-4 text-body-md text-secondary">{admin.email}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-label-md font-semibold ${
-                        admin.role === "owner" ? "bg-primary-light text-primary" : "bg-surface-container text-secondary"
-                      }`}>{admin.role === "owner" ? "Owner" : "HR Admin"}</span>
+                      {admin.role === "owner" ? (
+                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-primary-light text-primary">Owner</span>
+                      ) : admin.role === "employee" ? (
+                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-surface-container text-secondary">Employee + HR</span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-surface-container text-secondary">HR Admin</span>
+                      )}
                     </td>
                     <td className="px-6 py-4"><span className="badge-completed">Active</span></td>
                     <td className="px-6 py-4">
