@@ -4,6 +4,7 @@ const { authenticate, requireEmployee } = require('../middleware/auth');
 const { injectFields }  = require('../utils/injectFields');
 const { generateOnboardingPDF, generateTerminationPDF } = require('../utils/pdfGenerator');
 const { sendEmail } = require('../utils/email');
+const { logActivity } = require('../utils/activityLog');
 
 router.use(authenticate, requireEmployee);
 
@@ -159,6 +160,14 @@ router.post('/sections/:id/sign', async (req, res) => {
 
     await db.query('UPDATE employee_details SET last_activity=NOW() WHERE user_id=$1', [req.user.id]);
 
+    const sectionRes = await db.query('SELECT title FROM sections WHERE id=$1', [req.params.id]);
+    logActivity({
+      userId: req.user.id,
+      eventType: 'section_signed',
+      description: `Completed section: ${sectionRes.rows[0]?.title || req.params.id}`,
+      ip,
+    });
+
     // Check if all sections complete — if so generate PDF
     const progress = await db.query(`
       SELECT COUNT(*) AS total,
@@ -292,9 +301,10 @@ router.get('/download-packet', async (req, res) => {
     if (!rows[0]) return res.status(404).json({ message: 'PDF not ready yet. Please try again in a moment.' });
     const filePath = rows[0].storage_path;
     const fs = require('fs');
-    if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'PDF file not found. Please contact HR.' });
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'Your PDF has expired or was cleared. Click "Generate PDF" to create a fresh copy.' });
     const userRes = await db.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
     const name = userRes.rows[0]?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'employee';
+    logActivity({ userId: req.user.id, eventType: 'pdf_downloaded', description: 'Downloaded onboarding packet PDF' });
     const { size } = fs.statSync(filePath);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', size);
@@ -368,6 +378,97 @@ router.post('/termination-packet/:sectionId/sign', async (req, res) => {
     res.json({ message: 'Signed.' });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/employee/handbook-status ────────────────────────────────────────
+router.get('/handbook-status', async (req, res) => {
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+    const { rows } = await db.query(
+      'SELECT acknowledged_at FROM handbook_acknowledgements WHERE user_id=$1',
+      [req.user.id]
+    );
+    const handbookPath = path.join(__dirname, '..', 'templates', 'employee_handbook.pdf');
+    res.json({
+      acknowledged:   !!rows[0],
+      acknowledgedAt: rows[0]?.acknowledged_at || null,
+      available:      fs.existsSync(handbookPath),
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── POST /api/employee/acknowledge-handbook ───────────────────────────────────
+router.post('/acknowledge-handbook', async (req, res) => {
+  const fs   = require('fs');
+  const path = require('path');
+  const handbookPath = path.join(__dirname, '..', 'templates', 'employee_handbook.pdf');
+
+  if (!fs.existsSync(handbookPath)) {
+    return res.status(404).json({ message: 'Employee handbook PDF not yet uploaded. Please contact HR.' });
+  }
+
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const userRes = await db.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    const name = userRes.rows[0]?.name || '';
+
+    // Record acknowledgement (upsert — re-downloads just update timestamp)
+    await db.query(`
+      INSERT INTO handbook_acknowledgements (user_id, ip_address, name_at_time)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id) DO UPDATE SET acknowledged_at=NOW(), ip_address=$2
+    `, [req.user.id, ip, name]);
+    logActivity({ userId: req.user.id, eventType: 'handbook_acknowledged', description: 'Acknowledged & downloaded Employee Handbook', ip });
+
+    const { size } = fs.statSync(handbookPath);
+    const safeName = name.replace(/[^a-zA-Z0-9]/g, '_') || 'employee';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', size);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}_Employee_Handbook.pdf"`);
+    fs.createReadStream(handbookPath).pipe(res);
+  } catch (err) {
+    console.error('Handbook download error:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/employee/documents ───────────────────────────────────────────────
+router.get('/documents', async (req, res) => {
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+
+    const [packetRes, handbookRes] = await Promise.all([
+      db.query(
+        `SELECT storage_path, date_completed FROM documents
+         WHERE user_id=$1 AND type='Onboarding Packet' ORDER BY created_at DESC LIMIT 1`,
+        [req.user.id]
+      ),
+      db.query(
+        'SELECT acknowledged_at FROM handbook_acknowledgements WHERE user_id=$1',
+        [req.user.id]
+      ),
+    ]);
+
+    const handbookPath = path.join(__dirname, '..', 'templates', 'employee_handbook.pdf');
+
+    res.json({
+      packet: {
+        ready:         !!(packetRes.rows[0] && fs.existsSync(packetRes.rows[0].storage_path)),
+        dateCompleted: packetRes.rows[0]?.date_completed || null,
+      },
+      handbook: {
+        available:     fs.existsSync(handbookPath),
+        acknowledged:  !!handbookRes.rows[0],
+        acknowledgedAt: handbookRes.rows[0]?.acknowledged_at || null,
+      },
+    });
+  } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
 });

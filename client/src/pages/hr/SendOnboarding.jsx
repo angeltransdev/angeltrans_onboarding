@@ -7,7 +7,7 @@ export default function SendOnboarding() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     // Employee info
-    fullName: "", email: "", jobTitle: "", employmentType: "Full-Time",
+    fullName: "", email: "", phone: "", jobTitle: "", employmentType: "Full-Time",
     startDate: "", hourlyRate: "", overtimeRate: "", manager: "", department: "",
     // Section 5 — Wage Notice specific fields
     sickLeaveOption: "1",
@@ -62,6 +62,11 @@ export default function SendOnboarding() {
                 <label className="block text-label-lg text-on-surface mb-1.5">Email Address *</label>
                 <input required type="email" placeholder="Enter email address" className="input-field"
                   value={form.email} onChange={e => set("email", e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-label-lg text-on-surface mb-1.5">Phone Number</label>
+                <input type="tel" placeholder="(916) 000-0000" className="input-field"
+                  value={form.phone} onChange={e => set("phone", e.target.value)} />
               </div>
               <div>
                 <label className="block text-label-lg text-on-surface mb-1.5">Job Title / Position *</label>

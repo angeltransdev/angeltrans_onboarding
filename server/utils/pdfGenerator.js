@@ -4,6 +4,7 @@ const PDFDocument = require('pdfkit');
 const db          = require('../models/db');
 const { sendEmail }    = require('./email');
 const { injectFields } = require('./injectFields');
+const { logActivity }  = require('./activityLog');
 
 const PDF_DIR  = path.join(__dirname, '..', 'pdfs');
 if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
@@ -410,9 +411,9 @@ const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, de
 
 // ── Generate Onboarding PDF ────────────────────────────────────────────────────
 const generateOnboardingPDF = async (userId) => {
-  const [userRes, detailRes, sectionsRes, hrRes] = await Promise.all([
+  const [userRes, detailRes, sectionsRes, hrRes, settingsRes] = await Promise.all([
     db.query('SELECT * FROM users WHERE id=$1', [userId]),
-    db.query(`SELECT ed.*, u.name, u.email
+    db.query(`SELECT ed.*, u.name, u.email, u.phone
               FROM employee_details ed JOIN users u ON u.id=ed.user_id
               WHERE ed.user_id=$1`, [userId]),
     db.query(`SELECT s.section_number, s.title, s.content,
@@ -426,12 +427,14 @@ const generateOnboardingPDF = async (userId) => {
               FROM users u
               JOIN employee_details ed ON ed.created_by = u.id
               WHERE ed.user_id = $1`, [userId]),
+    db.query('SELECT * FROM company_settings WHERE id=1'),
   ]);
 
   const user     = userRes.rows[0];
   const details  = detailRes.rows[0];
   const sections = sectionsRes.rows;
   const hrUser   = hrRes.rows[0] || null;
+  const company  = settingsRes.rows[0] || {};
 
   if (!user)    throw new Error(`User ${userId} not found`);
   if (!details) throw new Error(`Employee details not found for user ${userId}`);
@@ -517,8 +520,9 @@ const generateOnboardingPDF = async (userId) => {
         const raw      = preprocessContent(section.content, hrUser);
         const injected = injectFields(
           raw,
-          { ...details, name: user.name, email: user.email },
-          section.date_signed
+          { ...details, name: user.name, email: user.email, phone: user.phone },
+          section.date_signed,
+          company
         );
         sy = renderContent(doc, injected, sy);
 
@@ -541,6 +545,7 @@ const generateOnboardingPDF = async (userId) => {
     [userId, outputPath]
   );
   await db.query(`UPDATE users SET status='Active', updated_at=NOW() WHERE id=$1`, [userId]);
+  logActivity({ userId, eventType: 'pdf_generated', description: 'Onboarding packet PDF generated — status set to Active' });
 
   const empHtml = `
     <div style="font-family:Arial,sans-serif;max-width:600px;">
@@ -672,6 +677,7 @@ const generateTerminationPDF = async (userId, terminationId) => {
     `INSERT INTO documents (user_id, type, storage_path, date_completed) VALUES ($1,'Termination Packet',$2,CURRENT_DATE)`,
     [userId, outputPath]
   );
+  logActivity({ userId, eventType: 'termination_pdf_generated', description: 'Termination packet PDF generated' });
   await Promise.all([
     sendEmail({ to: user.email, subject: 'Angel Trans LLC — Termination Documents',
       html: `<p>Hi ${user.name}, your termination documents have been signed and saved.</p>` }),

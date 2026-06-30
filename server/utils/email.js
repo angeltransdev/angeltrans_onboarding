@@ -1,25 +1,18 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-
-const transporter = nodemailer.createTransport({
-  host:       process.env.SMTP_HOST,
-  port:       SMTP_PORT,
-  secure:     SMTP_PORT === 465,  // native SSL/TLS for 465; STARTTLS upgrade for 587
-  requireTLS: SMTP_PORT === 587,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async ({ to, subject, html, attachments = [] }) => {
-  const info = await transporter.sendMail({
-    from: `"Angel Trans LLC" <${process.env.FROM_EMAIL || 'hr@angeltrans.com'}>`,
-    to, subject, html, attachments,
+  const { data, error } = await resend.emails.send({
+    from: `Angel Trans LLC <${process.env.FROM_EMAIL || 'hr@angeltransllc.com'}>`,
+    to,
+    subject,
+    html,
+    attachments: attachments.map(a => ({ filename: a.filename, content: a.content })),
   });
-  console.log(`Email sent to ${to}: ${info.messageId}`);
-  return info;
+  if (error) throw new Error(error.message || 'Failed to send email');
+  console.log(`Email sent to ${to}: ${data.id}`);
+  return data;
 };
 
 module.exports = { sendEmail };

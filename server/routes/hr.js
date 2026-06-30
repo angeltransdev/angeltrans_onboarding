@@ -5,6 +5,7 @@ const db       = require('../models/db');
 const { authenticate, requireHR, requireOwner } = require('../middleware/auth');
 const { sendEmail } = require('../utils/email');
 const { generateOnboardingPDF, generateTerminationPDF } = require('../utils/pdfGenerator');
+const { logActivity } = require('../utils/activityLog');
 
 // All HR routes require authentication + HR role
 router.use(authenticate, requireHR);
@@ -79,17 +80,27 @@ router.get('/employees', async (req, res) => {
 // ── GET /api/hr/employees/:id ────────────────────────────────────────────────
 router.get('/employees/:id', async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT u.id, u.name, u.email, u.status,
-             ed.job_title AS "jobTitle", ed.employment_type AS "employmentType",
-             ed.start_date AS "startDate", ed.hourly_rate AS "hourlyRate",
-             ed.overtime_rate AS "overtimeRate", ed.department, ed.manager
-      FROM users u
-      LEFT JOIN employee_details ed ON ed.user_id = u.id
-      WHERE u.id = $1 AND u.role = 'employee'
-    `, [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ message: 'Employee not found.' });
-    res.json(rows[0]);
+    const [empRes, hbRes] = await Promise.all([
+      db.query(`
+        SELECT u.id, u.name, u.email, u.phone, u.status,
+               ed.job_title AS "jobTitle", ed.employment_type AS "employmentType",
+               ed.start_date AS "startDate", ed.hourly_rate AS "hourlyRate",
+               ed.overtime_rate AS "overtimeRate", ed.department, ed.manager
+        FROM users u
+        LEFT JOIN employee_details ed ON ed.user_id = u.id
+        WHERE u.id = $1 AND u.role = 'employee'
+      `, [req.params.id]),
+      db.query(
+        'SELECT acknowledged_at FROM handbook_acknowledgements WHERE user_id=$1',
+        [req.params.id]
+      ),
+    ]);
+    if (!empRes.rows[0]) return res.status(404).json({ message: 'Employee not found.' });
+    res.json({
+      ...empRes.rows[0],
+      handbookAcknowledged:   !!hbRes.rows[0],
+      handbookAcknowledgedAt: hbRes.rows[0]?.acknowledged_at || null,
+    });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
@@ -108,6 +119,24 @@ router.get('/employees/:id/sections', async (req, res) => {
       ORDER BY s.section_number
     `, [req.params.id]);
     res.json(rows.map(r => ({ ...r, signed: r.status === 'Completed' })));
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/hr/employees/:id/activity ───────────────────────────────────────
+router.get('/employees/:id/activity', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT al.id, al.event_type AS "eventType", al.description, al.ip_address AS "ipAddress",
+             al.created_at AS "createdAt", actor.name AS "actorName"
+      FROM activity_log al
+      LEFT JOIN users actor ON actor.id = al.actor_id
+      WHERE al.user_id = $1
+      ORDER BY al.created_at DESC
+      LIMIT 200
+    `, [req.params.id]);
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
@@ -133,6 +162,7 @@ router.post('/employees/:id/resend', async (req, res) => {
              <p><a href="${link}" style="background:#9e0000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;display:inline-block;">Access Onboarding Portal</a></p>
              <p>This link expires in 7 days.</p>`
     });
+    logActivity({ userId: rows[0].id, actorId: req.user.id, eventType: 'link_resent', description: `Onboarding link resent by ${req.user.name}` });
     res.json({ message: 'Invitation resent.' });
   } catch (err) {
     console.error('Resend error:', err.message);
@@ -207,7 +237,7 @@ router.post('/employees/:id/generate-pdf', async (req, res) => {
 
 // ── POST /api/hr/send-onboarding ─────────────────────────────────────────────
 router.post('/send-onboarding', async (req, res) => {
-  const { fullName, email, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department } = req.body;
+  const { fullName, email, phone, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department } = req.body;
   if (!fullName || !email || !jobTitle || !startDate || !hourlyRate || !overtimeRate)
     return res.status(400).json({ message: 'Please fill all required fields.' });
   try {
@@ -220,9 +250,9 @@ router.post('/send-onboarding', async (req, res) => {
     const token   = crypto.randomBytes(32).toString('hex');
     const expiry  = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const { rows } = await db.query(
-      `INSERT INTO users (name, email, role, status, invite_token, token_expires)
-       VALUES ($1, $2, 'employee', 'Onboarding', $3, $4) RETURNING id`,
-      [fullName, email.toLowerCase(), token, expiry]
+      `INSERT INTO users (name, email, phone, role, status, invite_token, token_expires)
+       VALUES ($1, $2, $3, 'employee', 'Onboarding', $4, $5) RETURNING id`,
+      [fullName, email.toLowerCase(), phone || null, token, expiry]
     );
     const userId = rows[0].id;
 
@@ -245,6 +275,8 @@ router.post('/send-onboarding', async (req, res) => {
        SELECT $1, id, 'Not Started' FROM sections WHERE is_active = TRUE`,
       [userId]
     );
+
+    logActivity({ userId, actorId: req.user.id, eventType: 'employee_created', description: `Onboarding invite created by ${req.user.name}` });
 
     // Send invite email
     const link = `${process.env.CLIENT_URL}/set-password?token=${token}`;
@@ -371,7 +403,7 @@ router.get('/documents/:id/download', async (req, res) => {
     if (!rows[0]) return res.status(404).json({ message: 'Document not found.' });
     const filePath = rows[0].storage_path;
     const fs = require('fs');
-    if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'PDF file not found on server.' });
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'PDF has expired or was cleared. Click "Generate PDF" to create a fresh copy.' });
     const name = rows[0].name?.replace(/[^a-zA-Z0-9]/g, '_') || 'employee';
     const type = rows[0].type === 'Termination Packet' ? 'Termination' : 'Onboarding';
     res.setHeader('Content-Type', 'application/pdf');
@@ -379,6 +411,34 @@ router.get('/documents/:id/download', async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/hr/settings ─────────────────────────────────────────────────────
+router.get('/settings', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM company_settings WHERE id=1');
+    res.json(rows[0] || {});
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── PUT /api/hr/settings (owner only) ────────────────────────────────────────
+router.put('/settings', requireOwner, async (req, res) => {
+  const { name, address, phone, email } = req.body;
+  if (!name || !address || !phone || !email)
+    return res.status(400).json({ message: 'All fields are required.' });
+  try {
+    const { rows } = await db.query(`
+      INSERT INTO company_settings (id, name, address, phone, email, updated_at)
+      VALUES (1, $1, $2, $3, $4, NOW())
+      ON CONFLICT (id) DO UPDATE SET name=$1, address=$2, phone=$3, email=$4, updated_at=NOW()
+      RETURNING *
+    `, [name, address, phone, email]);
+    res.json(rows[0]);
+  } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
 });

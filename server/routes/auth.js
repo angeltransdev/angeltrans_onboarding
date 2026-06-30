@@ -4,6 +4,7 @@ const jwt      = require('jsonwebtoken');
 const crypto   = require('crypto');
 const db       = require('../models/db');
 const { sendEmail } = require('../utils/email');
+const { logActivity } = require('../utils/activityLog');
 
 // ── POST /api/auth/login ─────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
@@ -27,6 +28,14 @@ router.post('/login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
+    if (user.role === 'employee') {
+      logActivity({
+        userId: user.id,
+        eventType: 'login',
+        description: 'Logged in',
+        ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+      });
+    }
     res.json({ token });
   } catch (err) {
     console.error('Login error:', err);

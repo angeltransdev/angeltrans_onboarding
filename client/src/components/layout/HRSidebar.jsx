@@ -9,6 +9,7 @@ const navItems = [
   { to: "/hr/terminations", icon: "person_off", label: "Terminations" },
   { to: "/hr/documents", icon: "folder_open", label: "Documents" },
   { to: "/hr/admins", icon: "admin_panel_settings", label: "Admin Management" },
+  { to: "/hr/settings", icon: "business", label: "Company Settings" },
 ];
 
 export const HRSidebar = () => {

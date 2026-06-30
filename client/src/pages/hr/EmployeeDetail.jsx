@@ -13,21 +13,48 @@ export default function EmployeeDetail() {
   const [resending, setResending] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [activity, setActivity] = useState(null);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
-    const fetch = async () => {
+    let cancelled = false;
+
+    const fetchAll = async () => {
       try {
         const [empRes, secRes] = await Promise.all([
           api.get(`/hr/employees/${id}`),
           api.get(`/hr/employees/${id}/sections`)
         ]);
-        setEmployee(empRes.data);
-        setSections(secRes.data);
+        if (!cancelled) {
+          setEmployee(empRes.data);
+          setSections(secRes.data);
+        }
       } catch(e) { console.error(e); }
-      finally { setLoading(false); }
+      finally { if (!cancelled) setLoading(false); }
     };
-    fetch();
+
+    const pollSections = async () => {
+      try {
+        const secRes = await api.get(`/hr/employees/${id}/sections`);
+        if (!cancelled) setSections(secRes.data);
+      } catch(e) {}
+    };
+
+    fetchAll();
+    const interval = setInterval(pollSections, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [id]);
+
+  useEffect(() => {
+    if (tab !== "log" || activity !== null) return;
+    let cancelled = false;
+    setActivityLoading(true);
+    api.get(`/hr/employees/${id}/activity`)
+      .then(res => { if (!cancelled) setActivity(res.data); })
+      .catch(() => { if (!cancelled) setActivity([]); })
+      .finally(() => { if (!cancelled) setActivityLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, id, activity]);
 
   const handleResend = async () => {
     setResending(true);
@@ -197,6 +224,7 @@ export default function EmployeeDetail() {
               {[
                 ["Full Name", employee?.name],
                 ["Email", employee?.email],
+                ["Phone Number", employee?.phone],
                 ["Job Title", employee?.jobTitle],
                 ["Employment Type", employee?.employmentType],
                 ["Start Date", employee?.startDate],
@@ -210,13 +238,68 @@ export default function EmployeeDetail() {
                   <p className="text-body-md font-semibold text-on-surface">{value || "—"}</p>
                 </div>
               ))}
+              <div className="col-span-2 pt-4 border-t border-outline-variant">
+                <p className="text-label-md text-secondary mb-1">Handbook Acknowledged</p>
+                {employee?.handbookAcknowledged ? (
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-success text-xl">check_circle</span>
+                    <p className="text-body-md font-semibold text-success">
+                      Yes — {employee.handbookAcknowledgedAt
+                        ? new Date(employee.handbookAcknowledgedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+                        : "Date not recorded"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-secondary text-xl">cancel</span>
+                    <p className="text-body-md font-semibold text-secondary">Not yet acknowledged</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {tab === "log" && (
-          <div className="card">
-            <p className="text-secondary text-body-md text-center py-8">Activity log coming soon.</p>
+          <div className="card p-0 overflow-hidden">
+            {activityLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : !activity?.length ? (
+              <p className="text-secondary text-body-md text-center py-8">No activity recorded yet.</p>
+            ) : (
+              <ul className="divide-y divide-outline-variant">
+                {activity.map(a => (
+                  <li key={a.id} className="px-6 py-4 flex items-start gap-4">
+                    <span className="material-symbols-outlined text-primary text-xl mt-0.5">
+                      {{
+                        login: "login",
+                        section_signed: "task_alt",
+                        pdf_generated: "picture_as_pdf",
+                        termination_pdf_generated: "picture_as_pdf",
+                        pdf_downloaded: "download",
+                        handbook_acknowledged: "menu_book",
+                        link_resent: "send",
+                        employee_created: "person_add",
+                      }[a.eventType] || "history"}
+                    </span>
+                    <div className="flex-1">
+                      <p className="text-body-md text-on-surface">
+                        {a.description}
+                        {a.actorName && <span className="text-secondary"> — by {a.actorName}</span>}
+                      </p>
+                      <p className="text-label-md text-secondary mt-0.5">
+                        {new Date(a.createdAt).toLocaleString("en-US", {
+                          year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+                        })}
+                        {a.ipAddress && ` · ${a.ipAddress}`}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </main>

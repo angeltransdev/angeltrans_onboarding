@@ -1,4 +1,4 @@
-const injectFields = (content, details, signedDate = null) => {
+const injectFields = (content, details, signedDate = null, company = {}) => {
   if (!content || !details) return content;
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -57,11 +57,19 @@ const injectFields = (content, details, signedDate = null) => {
     .replace(/\{\{agreement_year\}\}/g,     agreementYear)
     // ── Section 24 — Annual agreement year ───────────────────────────────
     .replace(/\{\{year_signed\}\}/g,        yearSigned)
+    // ── Company fields ────────────────────────────────────────────────────
+    .replace(/\{\{company_name\}\}/g,    company.name    || 'Angel Trans LLC')
+    .replace(/\{\{company_address\}\}/g, company.address || '1333 Howe Ave # 201, Sacramento, CA 95825')
+    .replace(/\{\{company_phone\}\}/g,   company.phone   || '(916) 259-3249')
+    .replace(/\{\{company_email\}\}/g,   company.email   || 'hr@angeltransllc.com')
+    // ── Employee phone ────────────────────────────────────────────────────
+    .replace(/\{\{employee_phone\}\}/g,  details.phone   || '______________________________')
     // ── Inline blanks not covered by template tags ────────────────────────
-    // "Effective Date: ____" (Sections 17, 26, 27) → employment start date
     .replace(/\bEffective Date:\s*_{5,}/g,  `Effective Date: ${startDateStr}`)
-    // Fix stale email address in section content
-    .replace(/hr@angeltrans\.com(?!llc)/g,  'hr@angeltransllc.com');
+    // Fix stale hardcoded company contact info
+    .replace(/1333 Howe Ave # 201,?\s*Sacramento,?\s*CA\s*95825/g, company.address || '1333 Howe Ave # 201, Sacramento, CA 95825')
+    .replace(/\(916\)\s*259-3249/g,  company.phone || '(916) 259-3249')
+    .replace(/hr@angeltrans\.com(?!llc)/g, company.email || 'hr@angeltransllc.com');
 };
 
 module.exports = { injectFields };

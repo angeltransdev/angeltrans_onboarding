@@ -12,12 +12,18 @@ export default function OnboardingComplete() {
   const [regenerating, setRegenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
+  const [handbookAcknowledged, setHandbookAcknowledged] = useState(false);
+  const [handbookAcknowledgedAt, setHandbookAcknowledgedAt] = useState(null);
+  const [handbookAvailable, setHandbookAvailable] = useState(false);
+  const [handbookDownloading, setHandbookDownloading] = useState(false);
+  const [showHandbookConfirm, setShowHandbookConfirm] = useState(false);
+  const [handbookError, setHandbookError] = useState("");
 
   // Trigger PDF generation on mount, then poll via generate-pdf (JSON) until ready
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
-    const maxAttempts = 20; // poll up to 60 s (20 × 3 s)
+    const maxAttempts = 20;
 
     const poll = async () => {
       try {
@@ -27,7 +33,6 @@ export default function OnboardingComplete() {
             setPdfReady(true);
             setGenerating(false);
           } else if (attempts < maxAttempts) {
-            // Generation started but not yet done — keep polling
             attempts++;
             setTimeout(poll, 3000);
           } else {
@@ -40,15 +45,12 @@ export default function OnboardingComplete() {
         const status = err.response?.status;
         const msg    = err.response?.data?.message || "";
         if (status === 400) {
-          // Sections incomplete — stop polling, show message
           setGenerating(false);
           setError(msg || "Please complete all sections before downloading.");
         } else if (status >= 500) {
-          // Hard generation failure — show the real server error
           setGenerating(false);
           setError(msg || "PDF generation failed. Please contact HR.");
         } else if (!status) {
-          // Network error — server unreachable
           setGenerating(false);
           setError("Could not reach the server. Make sure the server is running, then refresh.");
         } else if (attempts < maxAttempts) {
@@ -65,19 +67,28 @@ export default function OnboardingComplete() {
     return () => { cancelled = true; };
   }, []);
 
+  // Fetch handbook status
+  useEffect(() => {
+    api.get("/employee/handbook-status")
+      .then(r => {
+        setHandbookAcknowledged(r.data.acknowledged);
+        setHandbookAcknowledgedAt(r.data.acknowledgedAt);
+        setHandbookAvailable(r.data.available ?? true);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleRegenerate = async () => {
     setRegenerating(true);
     setPdfReady(false);
     setGenerating(true);
     setError("");
     try {
-      // force=true clears the stale DB record so a fresh PDF is created
       await api.post("/employee/generate-pdf", { force: true }, { timeout: 15000 });
     } catch (err) {
       const msg = err.response?.data?.message || "";
       if (err.response?.status === 400) { setGenerating(false); setError(msg); setRegenerating(false); return; }
     }
-    // Poll until the new PDF is ready
     let attempts = 0;
     const poll = async () => {
       try {
@@ -95,7 +106,7 @@ export default function OnboardingComplete() {
     setError("");
     try {
       const res = await api.get("/employee/download-packet", { responseType: "blob", timeout: 30000 });
-      const url = URL.createObjectURL(res.data); // res.data is already a Blob
+      const url = URL.createObjectURL(res.data);
       const a    = document.createElement("a");
       a.href     = url;
       a.download = `${(user?.name || "employee").replace(/[^a-zA-Z0-9]/g, "_")}_Onboarding_Packet.pdf`;
@@ -106,16 +117,43 @@ export default function OnboardingComplete() {
     } catch (err) {
       let msg = "Download failed. Please try again.";
       if (err.response?.data instanceof Blob) {
-        try {
-          const text = await err.response.data.text();
-          msg = JSON.parse(text).message || msg;
-        } catch {}
+        try { msg = JSON.parse(await err.response.data.text()).message || msg; } catch {}
       } else {
         msg = err.response?.data?.message || msg;
+      }
+      if (msg.toLowerCase().includes("expired")) {
+        setDownloading(false);
+        handleRegenerate();
+        return;
       }
       setError(msg);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadHandbook = async () => {
+    setHandbookDownloading(true);
+    setHandbookError("");
+    setShowHandbookConfirm(false);
+    try {
+      const res = await api.post("/employee/acknowledge-handbook", {}, { responseType: "blob", timeout: 30000 });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(user?.name || "employee").replace(/[^a-zA-Z0-9]/g, "_")}_Employee_Handbook.pdf`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setHandbookAcknowledged(true);
+      setHandbookAcknowledgedAt(new Date().toISOString());
+    } catch (err) {
+      let msg = "Download failed. Please contact HR.";
+      if (err.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text()).message || msg; } catch {}
+      }
+      setHandbookError(msg);
+    } finally {
+      setHandbookDownloading(false);
     }
   };
 
@@ -178,8 +216,8 @@ export default function OnboardingComplete() {
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        {/* Orientation packet buttons */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center mb-8">
           <button
             onClick={handleDownload}
             disabled={downloading || generating}
@@ -215,10 +253,91 @@ export default function OnboardingComplete() {
           </button>
         </div>
 
-        <p className="text-secondary text-body-md mt-8">
+        {/* Employee Handbook section */}
+        <div className="card text-left mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="material-symbols-outlined text-primary text-2xl">menu_book</span>
+            <h2 className="font-headline font-semibold text-headline-sm text-on-surface">Employee Handbook</h2>
+            {handbookAcknowledged && (
+              <span className="ml-auto flex items-center gap-1 text-success text-label-md font-semibold">
+                <span className="material-symbols-outlined text-base">check_circle</span>
+                Received
+              </span>
+            )}
+          </div>
+
+          {handbookAcknowledged ? (
+            <p className="text-body-md text-secondary mb-4">
+              You acknowledged receipt of the Employee Handbook
+              {handbookAcknowledgedAt ? ` on ${new Date(handbookAcknowledgedAt).toLocaleDateString()}` : ""}.
+              You can download it again below.
+            </p>
+          ) : (
+            <p className="text-body-md text-secondary mb-4">
+              Please download and review the Angel Trans LLC Employee Handbook.
+              Downloading confirms your receipt and acknowledgement.
+            </p>
+          )}
+
+          {handbookError && (
+            <div className="mb-4 p-3 bg-error-container rounded-lg flex items-center gap-2">
+              <span className="material-symbols-outlined text-error text-xl">error</span>
+              <p className="text-error text-body-md">{handbookError}</p>
+            </div>
+          )}
+
+          {handbookAvailable ? (
+            <button
+              onClick={() => handbookAcknowledged ? handleDownloadHandbook() : setShowHandbookConfirm(true)}
+              disabled={handbookDownloading}
+              className="btn-secondary w-full flex items-center justify-center gap-2">
+              {handbookDownloading
+                ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                : <span className="material-symbols-outlined text-xl">download</span>}
+              {handbookDownloading
+                ? "Downloading..."
+                : handbookAcknowledged ? "Download Handbook Again" : "Download Employee Handbook"}
+            </button>
+          ) : (
+            <div className="p-3 bg-surface-container-low rounded-lg text-center">
+              <p className="text-secondary text-body-md italic">
+                Employee Handbook not yet available. Please check back or contact HR.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <p className="text-secondary text-body-md">
           Thank you for completing your onboarding with Angel Trans LLC.
         </p>
       </div>
+
+      {/* Handbook acknowledgement modal */}
+      {showHandbookConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-primary text-2xl">menu_book</span>
+              <h3 className="font-headline font-semibold text-headline-sm text-on-surface">
+                Acknowledge Receipt
+              </h3>
+            </div>
+            <p className="text-body-md text-on-surface mb-6">
+              By downloading this handbook, you confirm receipt and acknowledgement of the{" "}
+              <strong>Angel Trans LLC Employee Handbook</strong>. This will be recorded with your name and the date.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowHandbookConfirm(false)} className="btn-secondary flex-1">
+                Cancel
+              </button>
+              <button onClick={handleDownloadHandbook} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-xl">download</span>
+                Confirm & Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
