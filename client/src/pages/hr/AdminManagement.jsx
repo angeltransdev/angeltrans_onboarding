@@ -11,6 +11,8 @@ export default function AdminManagement() {
   const [adding, setAdding] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
+  const [promoteCandidate, setPromoteCandidate] = useState(null); // { userId, userName }
+  const [promoting, setPromoting] = useState(false);
 
   const fetchAdmins = () => {
     api.get("/hr/admins").then(r => setAdmins(r.data)).catch(()=>{}).finally(()=>setLoading(false));
@@ -18,13 +20,38 @@ export default function AdminManagement() {
   useEffect(fetchAdmins, []);
 
   const handleAdd = async (e) => {
-    e.preventDefault(); setError(""); setAdding(true);
+    e.preventDefault(); setError(""); setPromoteCandidate(null); setAdding(true);
     try {
       await api.post("/hr/admins", form);
       setForm({ name:"", email:"", role:"hr_admin" });
       setShowForm(false); fetchAdmins();
-    } catch(err) { setError(err.response?.data?.message || "Failed to add admin."); }
+    } catch(err) {
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data?.canPromote) {
+        setPromoteCandidate({ userId: data.userId, userName: data.userName, role: form.role });
+        setError(data.message);
+      } else {
+        setError(data?.message || "Failed to add admin.");
+      }
+    }
     finally { setAdding(false); }
+  };
+
+  const handlePromote = async () => {
+    if (!promoteCandidate) return;
+    setPromoting(true); setError("");
+    try {
+      const res = await api.post(`/hr/admins/promote/${promoteCandidate.userId}`, { role: promoteCandidate.role });
+      setPromoteCandidate(null);
+      setForm({ name:"", email:"", role:"hr_admin" });
+      setShowForm(false);
+      fetchAdmins();
+      alert(res.data.message);
+    } catch(err) {
+      setError(err.response?.data?.message || "Promotion failed.");
+    } finally {
+      setPromoting(false);
+    }
   };
 
   const handleRemove = async (id) => {
@@ -54,7 +81,33 @@ export default function AdminManagement() {
         {showForm && (
           <div className="card mb-6">
             <h2 className="font-headline font-semibold text-headline-sm text-on-surface mb-4">Add New Admin</h2>
-            {error && <div className="mb-4 p-3 bg-error-container rounded-lg"><p className="text-error text-body-md">{error}</p></div>}
+            {error && (
+              <div className="mb-4 p-3 bg-error-container rounded-lg">
+                <p className="text-error text-body-md">{error}</p>
+              </div>
+            )}
+            {promoteCandidate && (
+              <div className="mb-4 p-4 bg-surface-container rounded-xl border border-outline-variant flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary text-2xl">manage_accounts</span>
+                  <div>
+                    <p className="text-body-md font-semibold text-on-surface">Promote existing employee?</p>
+                    <p className="text-body-sm text-secondary">
+                      {promoteCandidate.userName} already has an employee account. Promoting will give them HR Admin access using their existing password — no new invite needed.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button type="button" onClick={() => { setPromoteCandidate(null); setError(""); }}
+                    className="btn-secondary text-sm">Cancel</button>
+                  <button type="button" onClick={handlePromote} disabled={promoting}
+                    className="btn-primary text-sm flex items-center gap-2">
+                    {promoting && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    {promoting ? "Promoting..." : `Promote ${promoteCandidate.userName}`}
+                  </button>
+                </div>
+              </div>
+            )}
             <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-label-lg text-on-surface mb-1.5">Full Name *</label>

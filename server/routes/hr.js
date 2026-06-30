@@ -507,8 +507,20 @@ router.post('/admins', requireOwner, async (req, res) => {
   const { name, email, role } = req.body;
   if (!name || !email) return res.status(400).json({ message: 'Name and email required.' });
   try {
-    const existing = await db.query('SELECT id FROM users WHERE email=$1', [email.toLowerCase()]);
-    if (existing.rows[0]) return res.status(409).json({ message: 'A user with this email already exists.' });
+    const existing = await db.query('SELECT id, name, role FROM users WHERE email=$1', [email.toLowerCase()]);
+    if (existing.rows[0]) {
+      const u = existing.rows[0];
+      // If the existing user is an employee, offer to promote instead of blocking
+      if (u.role === 'employee') {
+        return res.status(409).json({
+          message: `${u.name} is already in the system as an employee.`,
+          canPromote: true,
+          userId: u.id,
+          userName: u.name,
+        });
+      }
+      return res.status(409).json({ message: 'A user with this email already exists.' });
+    }
     const token  = crypto.randomBytes(32).toString('hex');
     const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const validRole = ['hr_admin','owner'].includes(role) ? role : 'hr_admin';
@@ -528,6 +540,33 @@ router.post('/admins', requireOwner, async (req, res) => {
     });
     res.status(201).json({ message: `Admin invitation sent to ${name}.` });
   } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── POST /api/hr/admins/promote/:id (owner only) ──────────────────────────────
+router.post('/admins/promote/:id', requireOwner, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM users WHERE id=$1 AND role=$2', [req.params.id, 'employee']);
+    if (!rows[0]) return res.status(404).json({ message: 'Employee not found or already an admin.' });
+    const validRole = ['hr_admin','owner'].includes(req.body.role) ? req.body.role : 'hr_admin';
+    await db.query(
+      `UPDATE users SET role=$1, status='Active', updated_at=NOW() WHERE id=$2`,
+      [validRole, rows[0].id]
+    );
+    // Notify them of their new access (fire-and-forget)
+    sendEmail({
+      to: rows[0].email,
+      subject: 'Angel Trans HR Portal — You now have HR Admin access',
+      html: `<p>Hi ${rows[0].name},</p>
+             <p>Your account has been upgraded to <strong>HR Admin</strong> on the Angel Trans HR Portal.</p>
+             <p>You can now log in at <a href="${process.env.CLIENT_URL}/hr/login">${process.env.CLIENT_URL}/hr/login</a> using your existing password.</p>
+             <p>— Angel Trans LLC</p>`
+    }).catch(e => console.warn('Promote email failed:', e.message));
+    logActivity({ userId: rows[0].id, actorId: req.user.id, eventType: 'role_promoted', description: `Promoted to ${validRole} by ${req.user.name}` });
+    res.json({ message: `${rows[0].name} has been promoted to HR Admin.` });
+  } catch (err) {
+    console.error('Promote error:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
