@@ -249,7 +249,9 @@ export default function EmployeeDetail() {
                 <button
                   onClick={() => setDetailsForm({
                     jobTitle: "", employmentType: "Full-Time", startDate: "",
-                    hourlyRate: "", overtimeRate: "", manager: "", department: ""
+                    hourlyRate: "", overtimeRate: "", manager: "", department: "",
+                    sickLeaveOption: "1", sickLeaveExemptReason: "",
+                    hasEmergencyDeclaration: "no", emergencyDeclarationDetails: "",
                   })}
                   className="btn-primary text-sm flex items-center gap-1.5 flex-shrink-0">
                   <span className="material-symbols-outlined text-base">edit</span>
@@ -259,33 +261,166 @@ export default function EmployeeDetail() {
             )}
 
             {detailsForm && (
-              <form onSubmit={handleSaveDetails} className="mb-6 p-4 bg-surface-container-low rounded-xl">
-                <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4">Employment Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    ["jobTitle", "Job Title", "text", true],
-                    ["employmentType", "Employment Type", "text", false],
-                    ["startDate", "Start Date", "date", true],
-                    ["department", "Department", "text", false],
-                    ["manager", "Direct Manager", "text", false],
-                    ["hourlyRate", "Hourly Rate ($)", "number", true],
-                    ["overtimeRate", "Overtime Rate ($)", "number", true],
-                  ].map(([field, label, type, required]) => (
-                    <div key={field}>
-                      <label className="text-label-md text-secondary block mb-1">{label}{required && " *"}</label>
-                      <input
-                        type={type}
-                        step={type === "number" ? "0.01" : undefined}
-                        required={required}
-                        value={detailsForm[field] ?? ""}
-                        onChange={e => setDetailsForm(f => ({ ...f, [field]: e.target.value }))}
-                        className="w-full border border-outline-variant rounded-lg px-3 py-2 text-body-md text-on-surface bg-white focus:outline-none focus:border-primary"
-                      />
+              <form onSubmit={handleSaveDetails} className="mb-6 space-y-6">
+
+                {/* Employee Info */}
+                <div className="p-4 bg-surface-container-low rounded-xl">
+                  <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4 pb-2 border-b border-outline-variant">
+                    Employee Information
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Job Title / Position *</label>
+                      <select required className="input-field" value={detailsForm.jobTitle ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, jobTitle: e.target.value }))}>
+                        <option value="">Select position</option>
+                        <option>NEMT Driver</option>
+                        <option>EMT</option>
+                        <option>Dispatcher</option>
+                        <option>Office Staff</option>
+                        <option>Other</option>
+                      </select>
                     </div>
-                  ))}
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Employment Type *</label>
+                      <select required className="input-field" value={detailsForm.employmentType ?? "Full-Time"}
+                        onChange={e => setDetailsForm(f => ({ ...f, employmentType: e.target.value }))}>
+                        <option>Full-Time</option>
+                        <option>Part-Time</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Department</label>
+                      <select className="input-field" value={detailsForm.department ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, department: e.target.value }))}>
+                        <option value="">Select department</option>
+                        <option>Operations</option>
+                        <option>Dispatch</option>
+                        <option>Administration</option>
+                        <option>EMT</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Direct Manager</label>
+                      <input placeholder="Manager name" className="input-field"
+                        value={detailsForm.manager ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, manager: e.target.value }))} />
+                    </div>
+                  </div>
                 </div>
-                {detailsError && <p className="text-error text-body-sm mt-3">{detailsError}</p>}
-                <div className="flex gap-3 mt-4">
+
+                {/* Compensation */}
+                <div className="p-4 bg-surface-container-low rounded-xl">
+                  <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4 pb-2 border-b border-outline-variant">
+                    Compensation Details
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Start Date *</label>
+                      <input required type="date" className="input-field"
+                        value={detailsForm.startDate ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, startDate: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Hourly Rate ($/hr) *</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary">$</span>
+                        <input required type="number" step="0.01" min="0" placeholder="0.00"
+                          className="input-field pl-7"
+                          value={detailsForm.hourlyRate ?? ""}
+                          onChange={e => setDetailsForm(f => ({ ...f, hourlyRate: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Overtime Rate ($/hr) *</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary">$</span>
+                        <input required type="number" step="0.01" min="0" placeholder="0.00"
+                          className="input-field pl-7"
+                          value={detailsForm.overtimeRate ?? ""}
+                          onChange={e => setDetailsForm(f => ({ ...f, overtimeRate: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 5 — Wage Notice */}
+                <div className="p-4 bg-surface-container-low rounded-xl border-l-4 border-primary">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="material-symbols-outlined text-primary text-xl">description</span>
+                    <h3 className="font-headline font-semibold text-label-lg text-on-surface">
+                      Section 5 — Wage Notice (Labor Code 2810.5)
+                    </h3>
+                  </div>
+                  <p className="text-secondary text-body-sm mb-4">Required by California law.</p>
+
+                  <label className="block text-label-md text-on-surface mb-2 font-semibold">Paid Sick Leave Type *</label>
+                  <div className="space-y-2 mb-5">
+                    {[
+                      { val: "1", label: "Option 1", desc: "Accrues paid sick leave only pursuant to the minimum requirements of Labor Code §245 et seq." },
+                      { val: "2", label: "Option 2", desc: "Accrues paid sick leave pursuant to the employer's policy that satisfies or exceeds the requirements of Labor Code §246." },
+                      { val: "3", label: "Option 3", desc: "Employer provides no less than 40 hours (or 5 days) of paid sick leave at the beginning of each 12-month period." },
+                      { val: "4", label: "Option 4", desc: "The employee is exempt or partially exempt from paid sick leave by Labor Code §245.5." },
+                    ].map(opt => (
+                      <label key={opt.val} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                        (detailsForm.sickLeaveOption ?? "1") === opt.val
+                          ? "border-primary bg-primary/5" : "border-outline-variant hover:border-primary/40"
+                      }`}>
+                        <input type="radio" name="df_sickLeave" value={opt.val}
+                          checked={(detailsForm.sickLeaveOption ?? "1") === opt.val}
+                          onChange={e => setDetailsForm(f => ({ ...f, sickLeaveOption: e.target.value }))}
+                          className="mt-0.5 accent-primary flex-shrink-0" />
+                        <div>
+                          <p className="text-label-md font-semibold text-on-surface">{opt.label}</p>
+                          <p className="text-body-sm text-secondary mt-0.5">{opt.desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  {(detailsForm.sickLeaveOption ?? "1") === "4" && (
+                    <div className="mb-5">
+                      <label className="block text-label-md text-on-surface mb-1.5">State exemption and subsection *</label>
+                      <input required placeholder="e.g. §245.5(a)(1) — construction industry employee"
+                        className="input-field"
+                        value={detailsForm.sickLeaveExemptReason ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, sickLeaveExemptReason: e.target.value }))} />
+                    </div>
+                  )}
+
+                  <label className="block text-label-md text-on-surface mb-2 font-semibold">Emergency or Disaster Declaration *</label>
+                  <div className="space-y-2">
+                    {[
+                      { val: "no",  label: "No declaration",          desc: "There is no applicable state or federal emergency or disaster declaration." },
+                      { val: "yes", label: "Yes — declaration applies", desc: "There is an applicable emergency or disaster declaration that may affect the employee's health and safety." },
+                    ].map(opt => (
+                      <label key={opt.val} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                        (detailsForm.hasEmergencyDeclaration ?? "no") === opt.val
+                          ? "border-primary bg-primary/5" : "border-outline-variant hover:border-primary/40"
+                      }`}>
+                        <input type="radio" name="df_emergency" value={opt.val}
+                          checked={(detailsForm.hasEmergencyDeclaration ?? "no") === opt.val}
+                          onChange={e => setDetailsForm(f => ({ ...f, hasEmergencyDeclaration: e.target.value }))}
+                          className="mt-0.5 accent-primary flex-shrink-0" />
+                        <div>
+                          <p className="text-label-md font-semibold text-on-surface">{opt.label}</p>
+                          <p className="text-body-sm text-secondary mt-0.5">{opt.desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  {(detailsForm.hasEmergencyDeclaration ?? "no") === "yes" && (
+                    <div className="mt-3">
+                      <label className="block text-label-md text-on-surface mb-1.5">Describe the declaration *</label>
+                      <textarea required rows={3} placeholder="e.g. Sacramento County Wildfire Emergency Declaration..."
+                        className="input-field resize-none"
+                        value={detailsForm.emergencyDeclarationDetails ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, emergencyDeclarationDetails: e.target.value }))} />
+                    </div>
+                  )}
+                </div>
+
+                {detailsError && <p className="text-error text-body-sm">{detailsError}</p>}
+                <div className="flex gap-3">
                   <button type="button" onClick={() => { setDetailsForm(null); setDetailsError(""); }}
                     className="btn-secondary text-sm">Cancel</button>
                   <button type="submit" disabled={savingDetails} className="btn-primary text-sm flex items-center gap-2">
@@ -344,6 +479,10 @@ export default function EmployeeDetail() {
                     overtimeRate: employee.overtimeRate || "",
                     manager: employee.manager || "",
                     department: employee.department || "",
+                    sickLeaveOption: employee.sickLeaveOption || "1",
+                    sickLeaveExemptReason: employee.sickLeaveExemptReason || "",
+                    hasEmergencyDeclaration: employee.emergencyDecl ? "yes" : "no",
+                    emergencyDeclarationDetails: employee.emergencyDetails || "",
                   })}
                   className="btn-secondary text-sm flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-base">edit</span>

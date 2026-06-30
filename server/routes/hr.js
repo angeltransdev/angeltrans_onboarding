@@ -85,7 +85,11 @@ router.get('/employees/:id', async (req, res) => {
         SELECT u.id, u.name, u.email, u.phone, u.status,
                ed.job_title AS "jobTitle", ed.employment_type AS "employmentType",
                ed.start_date AS "startDate", ed.hourly_rate AS "hourlyRate",
-               ed.overtime_rate AS "overtimeRate", ed.department, ed.manager
+               ed.overtime_rate AS "overtimeRate", ed.department, ed.manager,
+               ed.sick_leave_option AS "sickLeaveOption",
+               ed.sick_leave_exempt AS "sickLeaveExemptReason",
+               ed.emergency_decl AS "emergencyDecl",
+               ed.emergency_details AS "emergencyDetails"
         FROM users u
         LEFT JOIN employee_details ed ON ed.user_id = u.id
         WHERE u.id = $1 AND u.role = 'employee'
