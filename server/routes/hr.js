@@ -235,21 +235,59 @@ router.post('/employees/:id/generate-pdf', async (req, res) => {
   }
 });
 
+// ── PUT /api/hr/employees/:id/details (upsert employment details) ─────────────
+router.put('/employees/:id/details', async (req, res) => {
+  const { jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department,
+          sickLeaveOption, sickLeaveExemptReason, hasEmergencyDeclaration, emergencyDeclarationDetails } = req.body;
+  if (!jobTitle || !startDate || !hourlyRate || !overtimeRate)
+    return res.status(400).json({ message: 'Job title, start date, hourly rate, and overtime rate are required.' });
+  try {
+    const empRes = await db.query('SELECT id FROM users WHERE id=$1 AND role=$2', [req.params.id, 'employee']);
+    if (!empRes.rows[0]) return res.status(404).json({ message: 'Employee not found.' });
+
+    await db.query(`
+      INSERT INTO employee_details
+        (user_id, job_title, employment_type, start_date, hourly_rate, overtime_rate, manager, department,
+         sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT (user_id) DO UPDATE SET
+        job_title=$2, employment_type=$3, start_date=$4, hourly_rate=$5, overtime_rate=$6,
+        manager=$7, department=$8, sick_leave_option=$9, sick_leave_exempt=$10,
+        emergency_decl=$11, emergency_details=$12
+    `, [req.params.id, jobTitle, employmentType || 'Full-Time', startDate, hourlyRate, overtimeRate,
+        manager || null, department || null,
+        sickLeaveOption || '1', sickLeaveExemptReason || null,
+        hasEmergencyDeclaration === 'yes' || hasEmergencyDeclaration === true,
+        emergencyDeclarationDetails || null, req.user.id]);
+
+    res.json({ message: 'Employee details saved.' });
+  } catch (err) {
+    console.error('Update employee details error:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 // ── POST /api/hr/send-onboarding ─────────────────────────────────────────────
 router.post('/send-onboarding', async (req, res) => {
   const { fullName, email, phone, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department } = req.body;
   if (!fullName || !email || !jobTitle || !startDate || !hourlyRate || !overtimeRate)
     return res.status(400).json({ message: 'Please fill all required fields.' });
+
+  const client = await db.connect();
   try {
+    await client.query('BEGIN');
+
     // Check for duplicate
-    const existing = await db.query('SELECT id FROM users WHERE email=$1', [email.toLowerCase()]);
-    if (existing.rows[0])
+    const existing = await client.query('SELECT id FROM users WHERE email=$1', [email.toLowerCase()]);
+    if (existing.rows[0]) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ message: 'An employee with this email already exists.' });
+    }
 
     // Create user
     const token   = crypto.randomBytes(32).toString('hex');
     const expiry  = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    const { rows } = await db.query(
+    const { rows } = await client.query(
       `INSERT INTO users (name, email, phone, role, status, invite_token, token_expires)
        VALUES ($1, $2, $3, 'employee', 'Onboarding', $4, $5) RETURNING id`,
       [fullName, email.toLowerCase(), phone || null, token, expiry]
@@ -260,7 +298,7 @@ router.post('/send-onboarding', async (req, res) => {
     const { sickLeaveOption, sickLeaveExemptReason, hasEmergencyDeclaration, emergencyDeclarationDetails } = req.body;
 
     // Save employee details
-    await db.query(
+    await client.query(
       `INSERT INTO employee_details (user_id, job_title, employment_type, start_date, hourly_rate, overtime_rate, manager, department, sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [userId, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department,
@@ -270,11 +308,13 @@ router.post('/send-onboarding', async (req, res) => {
     );
 
     // Seed employee_sections rows (one per section)
-    await db.query(
+    await client.query(
       `INSERT INTO employee_sections (user_id, section_id, status)
        SELECT $1, id, 'Not Started' FROM sections WHERE is_active = TRUE`,
       [userId]
     );
+
+    await client.query('COMMIT');
 
     logActivity({ userId, actorId: req.user.id, eventType: 'employee_created', description: `Onboarding invite created by ${req.user.name}` });
 
@@ -311,8 +351,11 @@ router.post('/send-onboarding', async (req, res) => {
     });
     res.status(201).json({ message: `Onboarding packet sent to ${fullName}.` });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Send onboarding error:', err);
     res.status(500).json({ message: 'Server error.' });
+  } finally {
+    client.release();
   }
 });
 

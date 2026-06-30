@@ -15,6 +15,9 @@ export default function EmployeeDetail() {
   const [downloading, setDownloading] = useState(false);
   const [activity, setActivity] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [detailsForm, setDetailsForm] = useState(null);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +58,22 @@ export default function EmployeeDetail() {
       .finally(() => { if (!cancelled) setActivityLoading(false); });
     return () => { cancelled = true; };
   }, [tab, id, activity]);
+
+  const handleSaveDetails = async (e) => {
+    e.preventDefault();
+    setSavingDetails(true);
+    setDetailsError("");
+    try {
+      await api.put(`/hr/employees/${id}/details`, detailsForm);
+      const empRes = await api.get(`/hr/employees/${id}`);
+      setEmployee(empRes.data);
+      setDetailsForm(null);
+    } catch (err) {
+      setDetailsError(err.response?.data?.message || "Failed to save. Please try again.");
+    } finally {
+      setSavingDetails(false);
+    }
+  };
 
   const handleResend = async () => {
     setResending(true);
@@ -220,6 +239,63 @@ export default function EmployeeDetail() {
 
         {tab === "info" && (
           <div className="card">
+            {!employee?.jobTitle && !detailsForm && (
+              <div className="mb-6 p-4 bg-error-container rounded-xl flex items-start gap-3">
+                <span className="material-symbols-outlined text-error text-xl mt-0.5">warning</span>
+                <div className="flex-1">
+                  <p className="text-error text-body-md font-semibold">Employment details missing</p>
+                  <p className="text-error text-body-sm mt-0.5">PDF generation will fail until these are filled in.</p>
+                </div>
+                <button
+                  onClick={() => setDetailsForm({
+                    jobTitle: "", employmentType: "Full-Time", startDate: "",
+                    hourlyRate: "", overtimeRate: "", manager: "", department: ""
+                  })}
+                  className="btn-primary text-sm flex items-center gap-1.5 flex-shrink-0">
+                  <span className="material-symbols-outlined text-base">edit</span>
+                  Fill In Details
+                </button>
+              </div>
+            )}
+
+            {detailsForm && (
+              <form onSubmit={handleSaveDetails} className="mb-6 p-4 bg-surface-container-low rounded-xl">
+                <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4">Employment Details</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    ["jobTitle", "Job Title", "text", true],
+                    ["employmentType", "Employment Type", "text", false],
+                    ["startDate", "Start Date", "date", true],
+                    ["department", "Department", "text", false],
+                    ["manager", "Direct Manager", "text", false],
+                    ["hourlyRate", "Hourly Rate ($)", "number", true],
+                    ["overtimeRate", "Overtime Rate ($)", "number", true],
+                  ].map(([field, label, type, required]) => (
+                    <div key={field}>
+                      <label className="text-label-md text-secondary block mb-1">{label}{required && " *"}</label>
+                      <input
+                        type={type}
+                        step={type === "number" ? "0.01" : undefined}
+                        required={required}
+                        value={detailsForm[field] ?? ""}
+                        onChange={e => setDetailsForm(f => ({ ...f, [field]: e.target.value }))}
+                        className="w-full border border-outline-variant rounded-lg px-3 py-2 text-body-md text-on-surface bg-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  ))}
+                </div>
+                {detailsError && <p className="text-error text-body-sm mt-3">{detailsError}</p>}
+                <div className="flex gap-3 mt-4">
+                  <button type="button" onClick={() => { setDetailsForm(null); setDetailsError(""); }}
+                    className="btn-secondary text-sm">Cancel</button>
+                  <button type="submit" disabled={savingDetails} className="btn-primary text-sm flex items-center gap-2">
+                    {savingDetails && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    {savingDetails ? "Saving..." : "Save Details"}
+                  </button>
+                </div>
+              </form>
+            )}
+
             <div className="grid grid-cols-2 gap-6">
               {[
                 ["Full Name", employee?.name],
@@ -227,9 +303,9 @@ export default function EmployeeDetail() {
                 ["Phone Number", employee?.phone],
                 ["Job Title", employee?.jobTitle],
                 ["Employment Type", employee?.employmentType],
-                ["Start Date", employee?.startDate],
-                ["Hourly Rate", `$${employee?.hourlyRate}/hr`],
-                ["Overtime Rate", `$${employee?.overtimeRate}/hr`],
+                ["Start Date", employee?.startDate ? new Date(employee.startDate).toLocaleDateString() : null],
+                ["Hourly Rate", employee?.hourlyRate ? `$${employee.hourlyRate}/hr` : null],
+                ["Overtime Rate", employee?.overtimeRate ? `$${employee.overtimeRate}/hr` : null],
                 ["Department", employee?.department],
                 ["Direct Manager", employee?.manager],
               ].map(([label, value]) => (
@@ -257,6 +333,24 @@ export default function EmployeeDetail() {
                 )}
               </div>
             </div>
+
+            {employee?.jobTitle && (
+              <div className="mt-4 pt-4 border-t border-outline-variant flex justify-end">
+                <button onClick={() => setDetailsForm({
+                    jobTitle: employee.jobTitle || "",
+                    employmentType: employee.employmentType || "Full-Time",
+                    startDate: employee.startDate ? employee.startDate.split("T")[0] : "",
+                    hourlyRate: employee.hourlyRate || "",
+                    overtimeRate: employee.overtimeRate || "",
+                    manager: employee.manager || "",
+                    department: employee.department || "",
+                  })}
+                  className="btn-secondary text-sm flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-base">edit</span>
+                  Edit Details
+                </button>
+              </div>
+            )}
           </div>
         )}
 
