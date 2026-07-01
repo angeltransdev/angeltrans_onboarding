@@ -62,7 +62,7 @@ export const HRSidebar = () => {
         </div>
         {user?.role === "employee" && (
           <a href="/onboarding"
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white text-body-md transition-colors mb-1">
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 text-body-md font-semibold transition-colors mb-2">
             <span className="material-symbols-outlined text-xl">person</span>
             Employee Portal
           </a>

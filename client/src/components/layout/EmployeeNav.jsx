@@ -19,9 +19,9 @@ export const EmployeeNav = () => {
         <div className="flex items-center gap-4">
           {user?.isHrAdmin && (
             <a href="/hr/dashboard"
-              className="flex items-center gap-1.5 text-secondary hover:text-primary text-body-md transition-colors border border-outline-variant rounded-lg px-3 py-1.5">
-              <span className="material-symbols-outlined text-xl">admin_panel_settings</span>
-              <span className="hidden sm:inline text-label-md">HR Portal</span>
+              className="flex items-center gap-1.5 bg-primary text-white hover:bg-primary/90 transition-colors rounded-lg px-3 py-1.5 text-label-md font-semibold">
+              <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+              HR Portal
             </a>
           )}
           <div className="text-right hidden sm:block">
