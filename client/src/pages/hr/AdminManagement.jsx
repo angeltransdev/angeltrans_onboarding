@@ -63,7 +63,7 @@ export default function AdminManagement() {
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8 max-w-4xl">
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0 max-w-4xl">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-headline font-bold text-display-lg text-on-surface">Admin Management</h1>
@@ -145,6 +145,7 @@ export default function AdminManagement() {
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-surface-container-low">
                 <tr>
@@ -189,6 +190,7 @@ export default function AdminManagement() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </main>

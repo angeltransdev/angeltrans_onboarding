@@ -9,6 +9,7 @@ export default function OnboardingDashboard() {
   const navigate = useNavigate();
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [emergencyContact, setEmergencyContact] = useState(null);
   const [docs, setDocs] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -17,10 +18,13 @@ export default function OnboardingDashboard() {
   const [docError, setDocError] = useState("");
 
   useEffect(() => {
-    api.get("/employee/sections")
-      .then(r => setSections(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      api.get("/employee/sections"),
+      api.get("/employee/emergency-contact").catch(() => ({ data: null })),
+    ]).then(([sectionsRes, ecRes]) => {
+      setSections(sectionsRes.data);
+      setEmergencyContact(ecRes.data);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const completed = sections.filter(s => s.status === "Completed").length;
@@ -122,11 +126,11 @@ export default function OnboardingDashboard() {
   return (
     <div className="min-h-screen bg-surface">
       <EmployeeNav />
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
 
         {/* Welcome */}
         <div className="mb-6">
-          <h1 className="font-headline font-bold text-display-lg text-on-surface">
+          <h1 className="font-headline font-bold text-2xl sm:text-display-lg text-on-surface">
             Welcome, {user?.name?.split(" ")[0]} 👋
           </h1>
           <p className="text-secondary text-body-md mt-1">
@@ -136,7 +140,7 @@ export default function OnboardingDashboard() {
 
         {/* Progress card */}
         <div className="card mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
             <p className="font-headline font-semibold text-headline-sm text-on-surface">
               {completed} of {sections.length} sections completed
             </p>
@@ -166,9 +170,9 @@ export default function OnboardingDashboard() {
 
             <div className="space-y-3">
               {/* Orientation Packet */}
-              <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-surface-container-low rounded-xl">
                 <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-2xl">description</span>
+                  <span className="material-symbols-outlined text-primary text-2xl flex-shrink-0">description</span>
                   <div>
                     <p className="text-label-lg font-semibold text-on-surface">Signed Orientation Packet</p>
                     <p className="text-label-sm text-secondary">
@@ -181,7 +185,7 @@ export default function OnboardingDashboard() {
                   </div>
                 </div>
                 <button onClick={handleDownloadPacket} disabled={downloading || regenerating || !docs?.packet?.ready}
-                  className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                  className="btn-primary flex items-center justify-center gap-2 text-sm disabled:opacity-50 self-start sm:self-auto">
                   {downloading || regenerating
                     ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     : <span className="material-symbols-outlined text-xl">download</span>}
@@ -189,10 +193,10 @@ export default function OnboardingDashboard() {
                 </button>
               </div>
 
-              {/* Employee Handbook */}
-              <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl">
+              {/* Employee Handbook — hidden for 1099 independent contractors */}
+              {docs?.employmentClassification !== '1099' && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-surface-container-low rounded-xl">
                 <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-2xl">menu_book</span>
+                  <span className="material-symbols-outlined text-primary text-2xl flex-shrink-0">menu_book</span>
                   <div>
                     <p className="text-label-lg font-semibold text-on-surface">Employee Handbook</p>
                     {docs?.handbook?.acknowledged ? (
@@ -209,7 +213,7 @@ export default function OnboardingDashboard() {
                   <button
                     onClick={() => docs?.handbook?.acknowledged ? handleDownloadHandbook() : setShowHandbookConfirm(true)}
                     disabled={handbookDownloading}
-                    className="btn-secondary flex items-center gap-2 text-sm">
+                    className="btn-secondary flex items-center justify-center gap-2 text-sm self-start sm:self-auto">
                     {handbookDownloading
                       ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       : <span className="material-symbols-outlined text-xl">download</span>}
@@ -218,7 +222,7 @@ export default function OnboardingDashboard() {
                 ) : (
                   <span className="text-label-sm text-secondary italic">Not yet available</span>
                 )}
-              </div>
+              </div>}
             </div>
 
             {/* Handbook confirmation modal */}
@@ -250,11 +254,43 @@ export default function OnboardingDashboard() {
           </div>
         )}
 
+        {/* Emergency Contact step */}
+        <div className="card mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                emergencyContact?.submitted ? "bg-success" : "bg-surface-container"
+              }`}>
+                <span className={`material-symbols-outlined text-xl ${
+                  emergencyContact?.submitted ? "text-white" : "text-secondary"
+                }`}>emergency</span>
+              </div>
+              <div>
+                <p className="text-body-md font-semibold text-on-surface">Emergency Contact Form</p>
+                <p className="text-label-sm text-secondary mt-0.5">
+                  {emergencyContact?.submitted
+                    ? "Completed — you can update this at any time"
+                    : "Required — provide your emergency contacts and physician"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              {emergencyContact?.submitted
+                ? <span className="badge-completed"><span className="material-symbols-outlined text-base">check_circle</span>Completed</span>
+                : <span className="badge-notstarted">Required</span>}
+              <button onClick={() => navigate("/onboarding/emergency-contact")}
+                className={emergencyContact?.submitted ? "text-secondary hover:text-primary text-label-lg font-semibold transition-colors" : "btn-primary py-1.5 px-4 text-sm"}>
+                {emergencyContact?.submitted ? "Review" : "Start"}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Section table */}
         <div className="card p-0 overflow-hidden">
-          <div className="p-6 border-b border-outline-variant flex items-center justify-between">
+          <div className="p-4 sm:p-6 border-b border-outline-variant flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h2 className="font-headline font-semibold text-headline-sm text-on-surface">Your Orientation Sections</h2>
-            <div className="flex items-center gap-4 text-label-md text-secondary">
+            <div className="flex items-center gap-3 text-label-md text-secondary flex-wrap">
               <span className="flex items-center gap-1"><span className="w-2 h-2 bg-success rounded-full inline-block" />Completed</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 bg-warning rounded-full inline-block" />In Progress</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 bg-secondary rounded-full inline-block" />Not Started</span>
@@ -265,25 +301,40 @@ export default function OnboardingDashboard() {
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-surface-container-low">
-                <tr>
-                  {["#", "Section", "Status", "Action"].map(h => (
-                    <th key={h} className="text-left px-6 py-3 text-label-md text-secondary font-semibold">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant">
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden divide-y divide-outline-variant">
                 {sections.map((s, i) => (
-                  <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-6 py-4 text-label-md text-secondary font-semibold w-12">{i + 1}</td>
-                    <td className="px-6 py-4 text-body-md text-on-surface font-medium">{s.title}</td>
-                    <td className="px-6 py-4">{statusBadge(s.status)}</td>
-                    <td className="px-6 py-4">{actionBtn(s)}</td>
-                  </tr>
+                  <div key={s.id} className="p-4 flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-body-md font-medium text-on-surface leading-snug">{i + 1}. {s.title}</p>
+                      <div className="mt-1.5">{statusBadge(s.status)}</div>
+                    </div>
+                    <div className="flex-shrink-0">{actionBtn(s)}</div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+              {/* Desktop table */}
+              <table className="w-full hidden sm:table">
+                <thead className="bg-surface-container-low">
+                  <tr>
+                    {["#", "Section", "Status", "Action"].map(h => (
+                      <th key={h} className="text-left px-6 py-3 text-label-md text-secondary font-semibold">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {sections.map((s, i) => (
+                    <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4 text-label-md text-secondary font-semibold w-12">{i + 1}</td>
+                      <td className="px-6 py-4 text-body-md text-on-surface font-medium">{s.title}</td>
+                      <td className="px-6 py-4">{statusBadge(s.status)}</td>
+                      <td className="px-6 py-4">{actionBtn(s)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       </div>

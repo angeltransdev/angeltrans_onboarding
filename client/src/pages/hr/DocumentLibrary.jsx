@@ -7,6 +7,7 @@ export default function DocumentLibrary() {
   const [docs, setDocs] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [templateDownloading, setTemplateDownloading] = useState(false);
 
   useEffect(() => {
     api.get(`/hr/documents?type=${tab}`)
@@ -26,13 +27,41 @@ export default function DocumentLibrary() {
     } catch { alert("Failed to download document."); }
   };
 
+  const handleDownloadBlankTemplate = async () => {
+    setTemplateDownloading(true);
+    try {
+      const res = await api.get(`/hr/documents/blank-template`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Angel_Trans_Onboarding_Packet_Blank_Template.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to generate blank template.");
+    } finally {
+      setTemplateDownloading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8">
-        <div className="mb-8">
-          <h1 className="font-headline font-bold text-display-lg text-on-surface">Document Library</h1>
-          <p className="text-secondary text-body-md mt-1">Access all signed onboarding and termination packets.</p>
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0">
+        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="font-headline font-bold text-display-lg text-on-surface">Document Library</h1>
+            <p className="text-secondary text-body-md mt-1">Access all signed onboarding and termination packets.</p>
+          </div>
+          <button onClick={handleDownloadBlankTemplate} disabled={templateDownloading}
+            className="btn-secondary flex items-center gap-2 whitespace-nowrap">
+            {templateDownloading
+              ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              : <span className="material-symbols-outlined text-xl">description</span>}
+            {templateDownloading ? "Generating..." : "Download Blank Template"}
+          </button>
         </div>
 
         <div className="card p-0 overflow-hidden">

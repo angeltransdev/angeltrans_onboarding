@@ -18,12 +18,25 @@ const FAILURE_COOLDOWN = 120_000; // 2 min — don't auto-retry after a hard fai
 router.get('/sections', async (req, res) => {
   try {
     const { rows } = await db.query(`
-      SELECT s.id, s.section_number AS "sectionNumber", s.title,
+      SELECT s.id,
+             COALESCE(s.display_order, s.section_number) AS "sectionNumber",
+             s.title,
              COALESCE(es.status, 'Not Started') AS status
       FROM sections s
       LEFT JOIN employee_sections es ON es.section_id = s.id AND es.user_id = $1
+      LEFT JOIN employee_details  ed ON ed.user_id = $1
       WHERE s.is_active = TRUE
-      ORDER BY s.section_number
+        AND (
+          s.job_title_filter IS NULL
+          OR s.job_title_filter = ed.job_title
+          OR (s.job_title_filter = 'other'
+              AND (ed.job_title IS NULL OR ed.job_title NOT IN ('NEMT Driver', 'EMT')))
+        )
+        AND (
+          s.employment_classification_filter IS NULL
+          OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2')
+        )
+      ORDER BY COALESCE(s.display_order, s.section_number)
     `, [req.user.id]);
     res.json(rows);
   } catch (err) {
@@ -39,7 +52,18 @@ router.get('/sections/progress', async (req, res) => {
              COUNT(*) FILTER (WHERE es.status = 'Completed') AS completed
       FROM sections s
       JOIN employee_sections es ON es.section_id = s.id AND es.user_id = $1
+      LEFT JOIN employee_details ed ON ed.user_id = $1
       WHERE s.is_active = TRUE
+        AND (
+          s.job_title_filter IS NULL
+          OR s.job_title_filter = ed.job_title
+          OR (s.job_title_filter = 'other'
+              AND (ed.job_title IS NULL OR ed.job_title NOT IN ('NEMT Driver', 'EMT')))
+        )
+        AND (
+          s.employment_classification_filter IS NULL
+          OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2')
+        )
     `, [req.user.id]);
     const total     = parseInt(rows[0].total);
     const completed = parseInt(rows[0].completed);
@@ -53,7 +77,7 @@ router.get('/sections/progress', async (req, res) => {
 router.get('/sections/:id', async (req, res) => {
   try {
     // Get section content
-    const [secRes, detailRes, ackRes, sigRes] = await Promise.all([
+    const [secRes, detailRes, ackRes, sigRes, totalRes] = await Promise.all([
       db.query('SELECT * FROM sections WHERE id=$1', [req.params.id]),
       db.query(`SELECT ed.*, u.name FROM employee_details ed
                 JOIN users u ON u.id = ed.user_id WHERE ed.user_id = $1`, [req.user.id]),
@@ -61,6 +85,22 @@ router.get('/sections/:id', async (req, res) => {
                 FROM section_acknowledgements WHERE section_id=$1 ORDER BY item_order`, [req.params.id]),
       db.query(`SELECT * FROM employee_sections WHERE section_id=$1 AND user_id=$2`,
                 [req.params.id, req.user.id]),
+      db.query(`
+        SELECT COUNT(*) AS total
+        FROM sections s
+        LEFT JOIN employee_details ed ON ed.user_id = $1
+        WHERE s.is_active = TRUE
+          AND (
+            s.job_title_filter IS NULL
+            OR s.job_title_filter = ed.job_title
+            OR (s.job_title_filter = 'other'
+                AND (ed.job_title IS NULL OR ed.job_title NOT IN ('NEMT Driver', 'EMT')))
+          )
+          AND (
+            s.employment_classification_filter IS NULL
+            OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2')
+          )
+      `, [req.user.id]),
     ]);
 
     if (!secRes.rows[0]) return res.status(404).json({ message: 'Section not found.' });
@@ -86,7 +126,8 @@ router.get('/sections/:id', async (req, res) => {
 
     res.json({
       id:              section.id,
-      sectionNumber:   section.section_number,
+      sectionNumber:   section.display_order ?? section.section_number,
+      totalSections:   parseInt(totalRes.rows[0].total),
       title:           section.title,
       content:         injectedContent,
       hasInitials:     section.has_initials,
@@ -168,13 +209,24 @@ router.post('/sections/:id/sign', async (req, res) => {
       ip,
     });
 
-    // Check if all sections complete — if so generate PDF
+    // Check if all applicable sections complete — if so generate PDF
     const progress = await db.query(`
       SELECT COUNT(*) AS total,
              COUNT(*) FILTER (WHERE es.status='Completed') AS completed
       FROM sections s
       JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
+      LEFT JOIN employee_details ed ON ed.user_id=$1
       WHERE s.is_active=TRUE
+        AND (
+          s.job_title_filter IS NULL
+          OR s.job_title_filter = ed.job_title
+          OR (s.job_title_filter = 'other'
+              AND (ed.job_title IS NULL OR ed.job_title NOT IN ('NEMT Driver', 'EMT')))
+        )
+        AND (
+          s.employment_classification_filter IS NULL
+          OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2')
+        )
     `, [req.user.id]);
 
     const total     = parseInt(progress.rows[0].total);
@@ -205,13 +257,24 @@ router.post('/generate-pdf', async (req, res) => {
     const path   = require('path');
     const pdfDir = path.join(__dirname, '..', 'pdfs');
 
-    // Check all sections are complete
+    // Check all applicable sections are complete
     const progress = await db.query(`
       SELECT COUNT(*) AS total,
              COUNT(*) FILTER (WHERE es.status='Completed') AS completed
       FROM sections s
       JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
+      LEFT JOIN employee_details ed ON ed.user_id=$1
       WHERE s.is_active=TRUE
+        AND (
+          s.job_title_filter IS NULL
+          OR s.job_title_filter = ed.job_title
+          OR (s.job_title_filter = 'other'
+              AND (ed.job_title IS NULL OR ed.job_title NOT IN ('NEMT Driver', 'EMT')))
+        )
+        AND (
+          s.employment_classification_filter IS NULL
+          OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2')
+        )
     `, [req.user.id]);
 
     const total     = parseInt(progress.rows[0].total);
@@ -443,7 +506,7 @@ router.get('/documents', async (req, res) => {
     const fs   = require('fs');
     const path = require('path');
 
-    const [packetRes, handbookRes] = await Promise.all([
+    const [packetRes, handbookRes, classRes] = await Promise.all([
       db.query(
         `SELECT storage_path, date_completed FROM documents
          WHERE user_id=$1 AND type='Onboarding Packet' ORDER BY created_at DESC LIMIT 1`,
@@ -453,9 +516,14 @@ router.get('/documents', async (req, res) => {
         'SELECT acknowledged_at FROM handbook_acknowledgements WHERE user_id=$1',
         [req.user.id]
       ),
+      db.query(
+        'SELECT employment_classification FROM employee_details WHERE user_id=$1',
+        [req.user.id]
+      ),
     ]);
 
     const handbookPath = path.join(__dirname, '..', 'templates', 'employee_handbook.pdf');
+    const employmentClassification = classRes.rows[0]?.employment_classification || 'W2';
 
     res.json({
       packet: {
@@ -467,6 +535,7 @@ router.get('/documents', async (req, res) => {
         acknowledged:  !!handbookRes.rows[0],
         acknowledgedAt: handbookRes.rows[0]?.acknowledged_at || null,
       },
+      employmentClassification,
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
@@ -490,6 +559,118 @@ router.get('/termination-packet/download', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${name}_Termination_Packet.pdf"`);
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/employee/emergency-contact ──────────────────────────────────────
+router.get('/emergency-contact', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT * FROM emergency_contacts WHERE user_id=$1',
+      [req.user.id]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── POST /api/employee/emergency-contact/save ─────────────────────────────────
+router.post('/emergency-contact/save', async (req, res) => {
+  const {
+    employeeAddress, employeePhone,
+    hasMedicalRestrictions, medicalRestrictionsDetail,
+    primaryName, primaryRelationship, primaryAddress, primaryPhone, primaryAltPhone,
+    secondaryName, secondaryRelationship, secondaryAddress, secondaryPhone, secondaryAltPhone,
+    doctorName, doctorAddress, doctorPhone,
+    employeeSignature, signatureDate,
+  } = req.body;
+  try {
+    await db.query(`
+      INSERT INTO emergency_contacts (
+        user_id, employee_address, employee_phone,
+        has_medical_restrictions, medical_restrictions_detail,
+        primary_name, primary_relationship, primary_address, primary_phone, primary_alt_phone,
+        secondary_name, secondary_relationship, secondary_address, secondary_phone, secondary_alt_phone,
+        doctor_name, doctor_address, doctor_phone,
+        employee_signature, signature_date, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
+      ON CONFLICT (user_id) DO UPDATE SET
+        employee_address=$2, employee_phone=$3,
+        has_medical_restrictions=$4, medical_restrictions_detail=$5,
+        primary_name=$6, primary_relationship=$7, primary_address=$8, primary_phone=$9, primary_alt_phone=$10,
+        secondary_name=$11, secondary_relationship=$12, secondary_address=$13, secondary_phone=$14, secondary_alt_phone=$15,
+        doctor_name=$16, doctor_address=$17, doctor_phone=$18,
+        employee_signature=$19, signature_date=$20, updated_at=NOW()
+    `, [
+      req.user.id, employeeAddress || null, employeePhone || null,
+      hasMedicalRestrictions || false, medicalRestrictionsDetail || null,
+      primaryName || null, primaryRelationship || null, primaryAddress || null, primaryPhone || null, primaryAltPhone || null,
+      secondaryName || null, secondaryRelationship || null, secondaryAddress || null, secondaryPhone || null, secondaryAltPhone || null,
+      doctorName || null, doctorAddress || null, doctorPhone || null,
+      employeeSignature || null, signatureDate || null,
+    ]);
+    res.json({ message: 'Progress saved.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── POST /api/employee/emergency-contact/submit ───────────────────────────────
+router.post('/emergency-contact/submit', async (req, res) => {
+  const {
+    employeeAddress, employeePhone,
+    hasMedicalRestrictions, medicalRestrictionsDetail,
+    primaryName, primaryRelationship, primaryAddress, primaryPhone, primaryAltPhone,
+    secondaryName, secondaryRelationship, secondaryAddress, secondaryPhone, secondaryAltPhone,
+    doctorName, doctorAddress, doctorPhone,
+    employeeSignature, signatureDate,
+  } = req.body;
+
+  if (!primaryName || !primaryRelationship || !primaryPhone)
+    return res.status(400).json({ message: 'Primary contact name, relationship, and phone are required.' });
+  if (!employeeSignature || !signatureDate)
+    return res.status(400).json({ message: 'Signature and date are required.' });
+
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  try {
+    await db.query(`
+      INSERT INTO emergency_contacts (
+        user_id, employee_address, employee_phone,
+        has_medical_restrictions, medical_restrictions_detail,
+        primary_name, primary_relationship, primary_address, primary_phone, primary_alt_phone,
+        secondary_name, secondary_relationship, secondary_address, secondary_phone, secondary_alt_phone,
+        doctor_name, doctor_address, doctor_phone,
+        employee_signature, signature_date, submitted, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,TRUE,NOW())
+      ON CONFLICT (user_id) DO UPDATE SET
+        employee_address=$2, employee_phone=$3,
+        has_medical_restrictions=$4, medical_restrictions_detail=$5,
+        primary_name=$6, primary_relationship=$7, primary_address=$8, primary_phone=$9, primary_alt_phone=$10,
+        secondary_name=$11, secondary_relationship=$12, secondary_address=$13, secondary_phone=$14, secondary_alt_phone=$15,
+        doctor_name=$16, doctor_address=$17, doctor_phone=$18,
+        employee_signature=$19, signature_date=$20, submitted=TRUE, updated_at=NOW()
+    `, [
+      req.user.id, employeeAddress || null, employeePhone || null,
+      hasMedicalRestrictions || false, medicalRestrictionsDetail || null,
+      primaryName, primaryRelationship, primaryAddress || null, primaryPhone, primaryAltPhone || null,
+      secondaryName || null, secondaryRelationship || null, secondaryAddress || null, secondaryPhone || null, secondaryAltPhone || null,
+      doctorName || null, doctorAddress || null, doctorPhone || null,
+      employeeSignature, signatureDate,
+    ]);
+
+    logActivity({
+      userId: req.user.id,
+      eventType: 'emergency_contact_submitted',
+      description: 'Submitted emergency contact information',
+      ip,
+    });
+
+    res.json({ message: 'Emergency contact form submitted.' });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Server error.' });
   }
 });

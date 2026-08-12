@@ -33,7 +33,7 @@
            transition-colors duration-150;
   }
   .card {
-    @apply bg-white rounded-xl shadow-card border border-outline-variant p-6;
+    @apply bg-white rounded-xl shadow-card border border-outline-variant p-4 sm:p-6;
   }
   .badge-completed {
     @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-label-md

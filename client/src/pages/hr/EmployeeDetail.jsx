@@ -18,6 +18,8 @@ export default function EmployeeDetail() {
   const [detailsForm, setDetailsForm] = useState(null);
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState("");
+  const [previewSection, setPreviewSection] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +60,19 @@ export default function EmployeeDetail() {
       .finally(() => { if (!cancelled) setActivityLoading(false); });
     return () => { cancelled = true; };
   }, [tab, id, activity]);
+
+  const handlePreviewSection = async (sectionId) => {
+    setPreviewLoading(true);
+    setPreviewSection({ loading: true });
+    try {
+      const res = await api.get(`/hr/sections/${sectionId}/preview?employeeId=${id}`);
+      setPreviewSection(res.data);
+    } catch {
+      setPreviewSection(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const handleSaveDetails = async (e) => {
     e.preventDefault();
@@ -127,7 +142,7 @@ export default function EmployeeDetail() {
 
   if (loading) return (
     <div className="flex min-h-screen bg-surface"><HRSidebar />
-      <main className="ml-64 flex-1 flex items-center justify-center">
+      <main className="lg:ml-64 flex-1 flex items-center justify-center mt-14 lg:mt-0">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </main>
     </div>
@@ -138,7 +153,7 @@ export default function EmployeeDetail() {
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8">
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0">
         {/* Back */}
         <button onClick={() => navigate("/hr/dashboard")}
           className="flex items-center gap-1.5 text-secondary hover:text-primary text-body-md mb-6 transition-colors">
@@ -192,10 +207,10 @@ export default function EmployeeDetail() {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-outline-variant mb-6">
+        <div className="flex border-b border-outline-variant mb-6 overflow-x-auto">
           {[["progress","Section Progress"],["info","Employee Info"],["log","Activity Log"]].map(([k,l]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`px-6 py-3 text-label-lg font-semibold border-b-2 -mb-px transition-colors ${
+              className={`px-4 sm:px-6 py-3 text-label-lg font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap ${
                 tab===k ? "border-primary text-primary" : "border-transparent text-secondary hover:text-on-surface"
               }`}>{l}</button>
           ))}
@@ -203,37 +218,63 @@ export default function EmployeeDetail() {
 
         {tab === "progress" && (
           <div className="card p-0 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-surface-container-low">
-                <tr>
-                  {["#","Section","Status","Signed/Initialed","Date Signed",""].map(h => (
-                    <th key={h} className="text-left px-6 py-3 text-label-md text-secondary font-semibold">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant">
-                {sections.map((s, i) => (
-                  <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-6 py-4 text-label-md text-secondary font-semibold">{i+1}</td>
-                    <td className="px-6 py-4 text-body-md text-on-surface">{s.title}</td>
-                    <td className="px-6 py-4">
+            {/* Mobile section cards */}
+            <div className="sm:hidden divide-y divide-outline-variant">
+              {sections.map((s, i) => (
+                <div key={s.id} className="p-4 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-body-md font-medium text-on-surface leading-snug">{i+1}. {s.title}</p>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       {s.signed
-                        ? <span className="badge-completed">Completed</span>
-                        : <span className="badge-notstarted">Not Started</span>}
-                    </td>
-                    <td className="px-6 py-4">
-                      {s.signed
-                        ? <span className="material-symbols-outlined text-success text-xl">check_circle</span>
-                        : <span className="text-secondary">—</span>}
-                    </td>
-                    <td className="px-6 py-4 text-body-md text-secondary">{s.dateSigned || "—"}</td>
-                    <td className="px-6 py-4">
-                      <span className="material-symbols-outlined text-secondary text-xl cursor-pointer hover:text-primary">visibility</span>
-                    </td>
+                        ? <span className="badge-completed"><span className="material-symbols-outlined text-base">check_circle</span>Signed</span>
+                        : <span className="badge-notstarted">Not Signed</span>}
+                      {s.dateSigned && <span className="text-label-sm text-secondary">{s.dateSigned}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => handlePreviewSection(s.id)}
+                    className="text-secondary hover:text-primary transition-colors flex-shrink-0">
+                    <span className="material-symbols-outlined text-xl">visibility</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-surface-container-low">
+                  <tr>
+                    {["#","Section","Status","Signed/Initialed","Date Signed",""].map(h => (
+                      <th key={h} className="text-left px-6 py-3 text-label-md text-secondary font-semibold">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {sections.map((s, i) => (
+                    <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4 text-label-md text-secondary font-semibold">{i+1}</td>
+                      <td className="px-6 py-4 text-body-md text-on-surface">{s.title}</td>
+                      <td className="px-6 py-4">
+                        {s.signed
+                          ? <span className="badge-completed">Completed</span>
+                          : <span className="badge-notstarted">Not Started</span>}
+                      </td>
+                      <td className="px-6 py-4">
+                        {s.signed
+                          ? <span className="material-symbols-outlined text-success text-xl">check_circle</span>
+                          : <span className="text-secondary">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-body-md text-secondary">{s.dateSigned || "—"}</td>
+                      <td className="px-6 py-4">
+                        <button onClick={() => handlePreviewSection(s.id)}
+                          className="text-secondary hover:text-primary transition-colors">
+                          <span className="material-symbols-outlined text-xl">visibility</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -248,8 +289,8 @@ export default function EmployeeDetail() {
                 </div>
                 <button
                   onClick={() => setDetailsForm({
-                    jobTitle: "", employmentType: "Full-Time", startDate: "",
-                    hourlyRate: "", overtimeRate: "", manager: "", department: "",
+                    jobTitle: "", employmentType: "Full-Time", employmentClassification: "W2",
+                    startDate: "", hourlyRate: "", overtimeRate: "", manager: "", department: "",
                     sickLeaveOption: "1", sickLeaveExemptReason: "",
                     hasEmergencyDeclaration: "no", emergencyDeclarationDetails: "",
                   })}
@@ -268,7 +309,7 @@ export default function EmployeeDetail() {
                   <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4 pb-2 border-b border-outline-variant">
                     Employee Information
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-label-md text-on-surface mb-1.5">Job Title / Position *</label>
                       <select required className="input-field" value={detailsForm.jobTitle ?? ""}
@@ -287,6 +328,14 @@ export default function EmployeeDetail() {
                         onChange={e => setDetailsForm(f => ({ ...f, employmentType: e.target.value }))}>
                         <option>Full-Time</option>
                         <option>Part-Time</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-label-md text-on-surface mb-1.5">Employment Classification *</label>
+                      <select required className="input-field" value={detailsForm.employmentClassification ?? "W2"}
+                        onChange={e => setDetailsForm(f => ({ ...f, employmentClassification: e.target.value }))}>
+                        <option value="W2">W2 — Employee</option>
+                        <option value="1099">1099 — Independent Contractor</option>
                       </select>
                     </div>
                     <div>
@@ -314,7 +363,7 @@ export default function EmployeeDetail() {
                   <h3 className="font-headline font-semibold text-label-lg text-on-surface mb-4 pb-2 border-b border-outline-variant">
                     Compensation Details
                   </h3>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-label-md text-on-surface mb-1.5">Start Date *</label>
                       <input required type="date" className="input-field"
@@ -431,13 +480,14 @@ export default function EmployeeDetail() {
               </form>
             )}
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {[
                 ["Full Name", employee?.name],
                 ["Email", employee?.email],
                 ["Phone Number", employee?.phone],
                 ["Job Title", employee?.jobTitle],
                 ["Employment Type", employee?.employmentType],
+                ["Classification", employee?.employmentClassification === "1099" ? "1099 — Independent Contractor" : "W2 — Employee"],
                 ["Start Date", employee?.startDate ? new Date(employee.startDate).toLocaleDateString() : null],
                 ["Hourly Rate", employee?.hourlyRate ? `$${employee.hourlyRate}/hr` : null],
                 ["Overtime Rate", employee?.overtimeRate ? `$${employee.overtimeRate}/hr` : null],
@@ -474,6 +524,7 @@ export default function EmployeeDetail() {
                 <button onClick={() => setDetailsForm({
                     jobTitle: employee.jobTitle || "",
                     employmentType: employee.employmentType || "Full-Time",
+                    employmentClassification: employee.employmentClassification || "W2",
                     startDate: employee.startDate ? employee.startDate.split("T")[0] : "",
                     hourlyRate: employee.hourlyRate || "",
                     overtimeRate: employee.overtimeRate || "",
@@ -504,7 +555,7 @@ export default function EmployeeDetail() {
             ) : (
               <ul className="divide-y divide-outline-variant">
                 {activity.map(a => (
-                  <li key={a.id} className="px-6 py-4 flex items-start gap-4">
+                  <li key={a.id} className="px-4 sm:px-6 py-4 flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary text-xl mt-0.5">
                       {{
                         login: "login",
@@ -533,6 +584,69 @@ export default function EmployeeDetail() {
                 ))}
               </ul>
             )}
+          </div>
+        )}
+        {/* Section preview modal */}
+        {previewSection && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto"
+            onClick={e => { if (e.target === e.currentTarget) setPreviewSection(null); }}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-4">
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-outline-variant">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="material-symbols-outlined text-primary text-xl flex-shrink-0">article</span>
+                  <h3 className="font-headline font-bold text-headline-sm text-on-surface truncate">
+                    {previewSection.loading ? "Loading…" : previewSection.title}
+                  </h3>
+                </div>
+                <button onClick={() => setPreviewSection(null)}
+                  className="text-secondary hover:text-on-surface transition-colors flex-shrink-0 ml-3">
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
+
+              {previewSection.loading ? (
+                <div className="flex justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* Policy content */}
+                  <div className="p-5 max-h-[55vh] overflow-y-auto space-y-3">
+                    <div className="prose prose-sm max-w-none text-on-surface text-body-md leading-relaxed">
+                      {previewSection.content?.split('\n').map((para, i) =>
+                        para.trim() ? <p key={i}>{para}</p> : null
+                      )}
+                    </div>
+
+                    {/* Acknowledgement items */}
+                    {previewSection.acknowledgements?.length > 0 && (
+                      <div className="mt-6 border-t border-outline-variant pt-4">
+                        <h4 className="font-headline font-semibold text-label-lg text-on-surface mb-3">
+                          Document Acknowledgements
+                        </h4>
+                        <div className="space-y-2">
+                          {previewSection.acknowledgements.map((item, i) => (
+                            <div key={item.id} className="flex items-start gap-3 p-3 rounded-lg bg-surface-container">
+                              <span className="text-label-sm text-secondary font-semibold flex-shrink-0 mt-0.5">{i + 1}.</span>
+                              <p className="text-body-md text-on-surface">{item.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="p-4 border-t border-outline-variant flex items-center justify-between gap-3">
+                    <p className="text-label-sm text-secondary">Read-only preview — no signatures collected here</p>
+                    <button onClick={() => setPreviewSection(null)} className="btn-secondary text-sm">
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </main>

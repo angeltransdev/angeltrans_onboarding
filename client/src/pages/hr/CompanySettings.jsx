@@ -38,7 +38,7 @@ export default function CompanySettings() {
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8 max-w-3xl">
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0 max-w-3xl">
         <div className="mb-8">
           <h1 className="font-headline font-bold text-display-lg text-on-surface">Company Settings</h1>
           <p className="text-secondary text-body-md mt-1">

@@ -13,6 +13,7 @@ import Unauthorized from "./pages/shared/Unauthorized";
 import OnboardingDashboard from "./pages/employee/OnboardingDashboard";
 import SectionSigning from "./pages/employee/SectionSigning";
 import OnboardingComplete from "./pages/employee/OnboardingComplete";
+import EmergencyContact from "./pages/employee/EmergencyContact";
 import TerminationSigning from "./pages/employee/TerminationSigning";
 import TerminationComplete from "./pages/employee/TerminationComplete";
 
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/onboarding" element={<ProtectedRoute roles={EMP}><OnboardingDashboard /></ProtectedRoute>} />
           <Route path="/onboarding/section/:sectionId" element={<ProtectedRoute roles={EMP}><SectionSigning /></ProtectedRoute>} />
           <Route path="/onboarding/complete" element={<ProtectedRoute roles={EMP}><OnboardingComplete /></ProtectedRoute>} />
+          <Route path="/onboarding/emergency-contact" element={<ProtectedRoute roles={EMP}><EmergencyContact /></ProtectedRoute>} />
           <Route path="/termination" element={<ProtectedRoute roles={EMP}><TerminationSigning /></ProtectedRoute>} />
           <Route path="/termination/complete" element={<ProtectedRoute roles={EMP}><TerminationComplete /></ProtectedRoute>} />
 

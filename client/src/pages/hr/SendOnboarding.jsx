@@ -8,6 +8,7 @@ export default function SendOnboarding() {
   const [form, setForm] = useState({
     // Employee info
     fullName: "", email: "", phone: "", jobTitle: "", employmentType: "Full-Time",
+    employmentClassification: "W2",
     startDate: "", hourlyRate: "", overtimeRate: "", manager: "", department: "",
     // Section 5 — Wage Notice specific fields
     sickLeaveOption: "1",
@@ -36,12 +37,12 @@ export default function SendOnboarding() {
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8 max-w-4xl">
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0 max-w-4xl">
         <div className="mb-8">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-secondary hover:text-primary text-body-md mb-4 transition-colors">
             <span className="material-symbols-outlined text-xl">arrow_back</span> Back
           </button>
-          <h1 className="font-headline font-bold text-display-lg text-on-surface">Send Onboarding Packet</h1>
+          <h1 className="font-headline font-bold text-2xl sm:text-display-lg text-on-surface">Send Onboarding Packet</h1>
           <p className="text-secondary text-body-md mt-1">Enter employee details to send onboarding invitation.</p>
         </div>
 
@@ -86,6 +87,24 @@ export default function SendOnboarding() {
                   <option>Part-Time</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-label-lg text-on-surface mb-1.5">Employment Classification *</label>
+                <select required className="input-field" value={form.employmentClassification} onChange={e => set("employmentClassification", e.target.value)}>
+                  <option value="W2">W2 — Employee</option>
+                  <option value="1099">1099 — Independent Contractor</option>
+                </select>
+              </div>
+              {form.employmentClassification === "1099" && (
+                <div className="sm:col-span-2 flex items-start gap-3 p-4 bg-warning/10 border border-warning/30 rounded-xl">
+                  <span className="material-symbols-outlined text-warning text-xl flex-shrink-0 mt-0.5">description</span>
+                  <div>
+                    <p className="text-label-lg font-semibold text-on-surface">Independent Contractor Agreement will be added</p>
+                    <p className="text-body-sm text-secondary mt-0.5">
+                      Because this employee is classified as 1099, the Independent Contractor Agreement will automatically be included in their onboarding packet for e-signature.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-label-lg text-on-surface mb-1.5">Department</label>
                 <select className="input-field" value={form.department} onChange={e => set("department", e.target.value)}>

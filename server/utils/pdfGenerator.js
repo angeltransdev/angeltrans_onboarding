@@ -241,7 +241,6 @@ const sigBlock = (doc, y, section) => {
 
 // ── Employer authorization block (bilateral sections) ─────────────────────────
 const hrSigBlock = (doc, y, hrUser) => {
-  if (!hrUser) return y;
   const H = 88;
   if (y + H > doc.page.height - 40) { doc.addPage(); y = 44; }
   y += 10;
@@ -252,9 +251,11 @@ const hrSigBlock = (doc, y, hrUser) => {
   doc.fillColor(RED).font('Helvetica-Bold').fontSize(9.5)
      .text('Employer Authorization', ML + 10, y + 8, { width: TW - 20 });
 
-  // HR name (pre-filled)
-  doc.fillColor(DARK).font('Helvetica').fontSize(9.5)
-     .text(hrUser.name, ML + 10, y + 28, { width: 240, lineBreak: false });
+  // HR name (pre-filled when known; left blank for unsigned templates)
+  if (hrUser?.name) {
+    doc.fillColor(DARK).font('Helvetica').fontSize(9.5)
+       .text(hrUser.name, ML + 10, y + 28, { width: 240, lineBreak: false });
+  }
   doc.moveTo(ML + 10, y + 46).lineTo(ML + 252, y + 46).strokeColor('#999').lineWidth(0.7).stroke();
   doc.fillColor(GREY).font('Helvetica').fontSize(7.5).text('Authorized Representative', ML + 10, y + 49);
 
@@ -283,7 +284,7 @@ const drawCheckmark = (doc, cx, cy, size, color) => {
 };
 
 // ── Section 28: Completion Checklist (grid table) ─────────────────────────────
-const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, details) => {
+const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, details, blank = false) => {
   // Rows are sections 1-27 (all except the checklist itself)
   const rows = allSections.filter(s => s.section_number < 28 || !/completion checklist/i.test(s.title));
 
@@ -338,10 +339,15 @@ const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, de
     doc.fillColor(DARK).font('Helvetica').fontSize(8)
        .text(s.title, COL.title + 4, y + 4, { width: CW.title - 8 });
 
-    // Employee signed — vector checkmark (no font encoding issues)
+    // Employee signed — vector checkmark, or an empty box for unsigned templates
     const checkCX = COL.emp + CW.emp / 2;
     const checkCY = y + rowH / 2;
-    drawCheckmark(doc, checkCX, checkCY, 9);
+    if (blank) {
+      const bs = 9;
+      doc.rect(checkCX - bs / 2, checkCY - bs / 2, bs, bs).strokeColor('#999').lineWidth(0.8).stroke();
+    } else {
+      drawCheckmark(doc, checkCX, checkCY, 9);
+    }
 
     // HR initials line
     const hrLineY = y + rowH - 5;
@@ -421,8 +427,12 @@ const generateOnboardingPDF = async (userId) => {
                      es.signed_at, es.ip_address
               FROM sections s
               JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
+              JOIN employee_details ed ON ed.user_id=$1
               WHERE es.status='Completed'
-              ORDER BY s.section_number`, [userId]),
+                AND (s.employment_classification_filter IS NULL
+                     OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2'))
+                AND (s.job_title_filter IS NULL OR s.job_title_filter = ed.job_title)
+              ORDER BY COALESCE(s.display_order, s.section_number)`, [userId]),
     db.query(`SELECT u.name, u.email
               FROM users u
               JOIN employee_details ed ON ed.created_by = u.id
@@ -569,6 +579,82 @@ const generateOnboardingPDF = async (userId) => {
   return outputPath;
 };
 
+// ── Generate Blank Onboarding Template (all active sections, unsigned) ────────
+const generateBlankOnboardingTemplate = async () => {
+  const [sectionsRes, settingsRes] = await Promise.all([
+    db.query(`SELECT * FROM sections WHERE is_active = TRUE ORDER BY COALESCE(display_order, section_number)`),
+    db.query('SELECT * FROM company_settings WHERE id=1'),
+  ]);
+
+  const sections = sectionsRes.rows;
+  const company  = settingsRes.rows[0] || {};
+  // Sentinel value so no sick-leave checkbox is pre-checked in the blank template
+  const blankDetails = { sick_leave_option: 'none' };
+
+  const fileName   = `onboarding_blank_template_${Date.now()}.pdf`;
+  const outputPath = path.join(PDF_DIR, fileName);
+
+  await new Promise((resolve, reject) => {
+    const doc    = new PDFDocument({ size: 'LETTER', autoFirstPage: true,
+                                     margins: { top: 50, bottom: 50, left: ML, right: MR } });
+    const stream = fs.createWriteStream(outputPath);
+    doc.pipe(stream);
+    stream.on('finish', resolve);
+    stream.on('error',  reject);
+
+    // ── COVER PAGE ─────────────────────────────────────────────────
+    doc.rect(0, 0, W, 60).fill(RED);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(20)
+       .text('Angel Trans LLC', ML, 16, { width: TW });
+    doc.font('Helvetica').fontSize(9)
+       .text('Employee Orientation Packet — Blank Template', ML, 40, { width: TW });
+
+    let y = 78;
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(20)
+       .text('Orientation & Onboarding Packet', ML, y, { width: TW, align: 'center' }); y += 32;
+    doc.fillColor(GREY).font('Helvetica').fontSize(11)
+       .text('Blank Template — Unsigned, For Reference & Printing', ML, y, { width: TW, align: 'center' }); y += 22;
+    doc.moveTo(ML, y).lineTo(W - MR, y).strokeColor(RED).lineWidth(1.5).stroke(); y += 20;
+
+    doc.fillColor(DARK).font('Helvetica').fontSize(10.5)
+       .text(`This template contains all ${sections.length} active orientation sections, unsigned.`, ML, y,
+             { width: TW, align: 'center' }); y += 18;
+    doc.fillColor(GREY).font('Helvetica').fontSize(9)
+       .text(`Generated: ${fmt(new Date())}`, ML, y, { width: TW, align: 'center' });
+
+    // ── SECTIONS ───────────────────────────────────────────────────
+    sections.forEach((section) => {
+      const isChecklist = section.section_number === 28 ||
+                          /completion checklist/i.test(section.title);
+
+      doc.addPage();
+      pageHeader(doc, `SECTION ${section.section_number} OF ${sections.length}`, section.title);
+
+      let sy = 62;
+
+      if (isChecklist) {
+        sy = renderCompletionChecklist(doc, sy, sections, section, null, {}, true);
+        sigBlock(doc, sy, {});
+      } else {
+        const raw      = preprocessContent(section.content, null);
+        const injected = injectFields(raw, blankDetails, null, company);
+        sy = renderContent(doc, injected, sy);
+
+        if (section.section_number === 1) {
+          sy = hrSigBlock(doc, sy, null);
+        }
+
+        sigBlock(doc, sy, {});
+      }
+    });
+
+    doc.end();
+  });
+
+  console.log(`✅ Blank onboarding template PDF generated: ${fileName}`);
+  return outputPath;
+};
+
 // ── Generate Termination PDF ───────────────────────────────────────────────────
 const generateTerminationPDF = async (userId, terminationId) => {
   const [userRes, detailRes, sigRes, termRes] = await Promise.all([
@@ -690,4 +776,4 @@ const generateTerminationPDF = async (userId, terminationId) => {
   return outputPath;
 };
 
-module.exports = { generateOnboardingPDF, generateTerminationPDF };
+module.exports = { generateOnboardingPDF, generateTerminationPDF, generateBlankOnboardingTemplate };

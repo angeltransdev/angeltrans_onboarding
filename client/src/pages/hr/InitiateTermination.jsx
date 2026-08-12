@@ -33,7 +33,7 @@ export default function InitiateTermination() {
   return (
     <div className="flex min-h-screen bg-surface">
       <HRSidebar />
-      <main className="ml-64 flex-1 p-8 max-w-3xl">
+      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0 max-w-3xl">
         <div className="mb-8">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-secondary hover:text-primary text-body-md mb-4 transition-colors">
             <span className="material-symbols-outlined text-xl">arrow_back</span> Back

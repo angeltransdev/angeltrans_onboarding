@@ -4,8 +4,9 @@ const crypto   = require('crypto');
 const db       = require('../models/db');
 const { authenticate, requireHR, requireOwner } = require('../middleware/auth');
 const { sendEmail } = require('../utils/email');
-const { generateOnboardingPDF, generateTerminationPDF } = require('../utils/pdfGenerator');
+const { generateOnboardingPDF, generateTerminationPDF, generateBlankOnboardingTemplate } = require('../utils/pdfGenerator');
 const { logActivity } = require('../utils/activityLog');
+const { injectFields } = require('../utils/injectFields');
 
 // All HR routes require authentication + HR role
 router.use(authenticate, requireHR);
@@ -89,7 +90,8 @@ router.get('/employees/:id', async (req, res) => {
                ed.sick_leave_option AS "sickLeaveOption",
                ed.sick_leave_exempt AS "sickLeaveExemptReason",
                ed.emergency_decl AS "emergencyDecl",
-               ed.emergency_details AS "emergencyDetails"
+               ed.emergency_details AS "emergencyDetails",
+               COALESCE(ed.employment_classification, 'W2') AS "employmentClassification"
         FROM users u
         LEFT JOIN employee_details ed ON ed.user_id = u.id
         WHERE u.id = $1 AND u.role = 'employee'
@@ -120,9 +122,51 @@ router.get('/employees/:id/sections', async (req, res) => {
       FROM sections s
       LEFT JOIN employee_sections es ON es.section_id = s.id AND es.user_id = $1
       WHERE s.is_active = TRUE
-      ORDER BY s.section_number
+      ORDER BY COALESCE(s.display_order, s.section_number)
     `, [req.params.id]);
     res.json(rows.map(r => ({ ...r, signed: r.status === 'Completed' })));
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/hr/sections/:sectionId/preview ──────────────────────────────────
+router.get('/sections/:sectionId/preview', async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+
+    const [secRes, ackRes] = await Promise.all([
+      db.query('SELECT * FROM sections WHERE id=$1 AND is_active=TRUE', [req.params.sectionId]),
+      db.query(
+        `SELECT id, item_order AS "itemOrder", item_text AS "text"
+         FROM section_acknowledgements WHERE section_id=$1 ORDER BY item_order`,
+        [req.params.sectionId]
+      ),
+    ]);
+
+    if (!secRes.rows[0]) return res.status(404).json({ message: 'Section not found.' });
+
+    const section = secRes.rows[0];
+    let content = section.content;
+
+    if (employeeId) {
+      const detailRes = await db.query(
+        `SELECT ed.*, u.name FROM employee_details ed
+         JOIN users u ON u.id = ed.user_id WHERE ed.user_id = $1`,
+        [employeeId]
+      );
+      if (detailRes.rows[0]) {
+        const signingDate = new Date().toISOString().split('T')[0];
+        content = injectFields(section.content, detailRes.rows[0], signingDate);
+      }
+    }
+
+    res.json({
+      id:               section.id,
+      title:            section.title,
+      content,
+      acknowledgements: ackRes.rows,
+    });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
@@ -209,13 +253,17 @@ router.post('/employees/:id/generate-pdf', async (req, res) => {
     );
     if (!userRows[0]) return res.status(404).json({ message: 'Employee not found.' });
 
-    // Check completion status
+    // Check completion status — filtered to only sections that apply to this employee's classification + job title
     const progress = await db.query(`
       SELECT COUNT(*) AS total,
              COUNT(*) FILTER (WHERE es.status='Completed') AS completed
       FROM sections s
       JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
+      JOIN employee_details ed ON ed.user_id=$1
       WHERE s.is_active=TRUE
+        AND (s.employment_classification_filter IS NULL
+             OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2'))
+        AND (s.job_title_filter IS NULL OR s.job_title_filter = ed.job_title)
     `, [empId]);
 
     const total     = parseInt(progress.rows[0].total);
@@ -242,9 +290,11 @@ router.post('/employees/:id/generate-pdf', async (req, res) => {
 // ── PUT /api/hr/employees/:id/details (upsert employment details) ─────────────
 router.put('/employees/:id/details', async (req, res) => {
   const { jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department,
-          sickLeaveOption, sickLeaveExemptReason, hasEmergencyDeclaration, emergencyDeclarationDetails } = req.body;
+          sickLeaveOption, sickLeaveExemptReason, hasEmergencyDeclaration, emergencyDeclarationDetails,
+          employmentClassification } = req.body;
   if (!jobTitle || !startDate || !hourlyRate || !overtimeRate)
     return res.status(400).json({ message: 'Job title, start date, hourly rate, and overtime rate are required.' });
+  const classification = ['W2', '1099'].includes(employmentClassification) ? employmentClassification : 'W2';
   try {
     const empRes = await db.query('SELECT id FROM users WHERE id=$1 AND role=$2', [req.params.id, 'employee']);
     if (!empRes.rows[0]) return res.status(404).json({ message: 'Employee not found.' });
@@ -252,17 +302,17 @@ router.put('/employees/:id/details', async (req, res) => {
     await db.query(`
       INSERT INTO employee_details
         (user_id, job_title, employment_type, start_date, hourly_rate, overtime_rate, manager, department,
-         sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, created_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, employment_classification, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       ON CONFLICT (user_id) DO UPDATE SET
         job_title=$2, employment_type=$3, start_date=$4, hourly_rate=$5, overtime_rate=$6,
         manager=$7, department=$8, sick_leave_option=$9, sick_leave_exempt=$10,
-        emergency_decl=$11, emergency_details=$12
+        emergency_decl=$11, emergency_details=$12, employment_classification=$13
     `, [req.params.id, jobTitle, employmentType || 'Full-Time', startDate, hourlyRate, overtimeRate,
         manager || null, department || null,
         sickLeaveOption || '1', sickLeaveExemptReason || null,
         hasEmergencyDeclaration === 'yes' || hasEmergencyDeclaration === true,
-        emergencyDeclarationDetails || null, req.user.id]);
+        emergencyDeclarationDetails || null, classification, req.user.id]);
 
     res.json({ message: 'Employee details saved.' });
   } catch (err) {
@@ -273,11 +323,12 @@ router.put('/employees/:id/details', async (req, res) => {
 
 // ── POST /api/hr/send-onboarding ─────────────────────────────────────────────
 router.post('/send-onboarding', async (req, res) => {
-  const { fullName, email, phone, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department } = req.body;
+  const { fullName, email, phone, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department, employmentClassification } = req.body;
   if (!fullName || !email || !jobTitle || !startDate || !hourlyRate || !overtimeRate)
     return res.status(400).json({ message: 'Please fill all required fields.' });
+  const classification = ['W2', '1099'].includes(employmentClassification) ? employmentClassification : 'W2';
 
-  const client = await db.connect();
+  const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
@@ -303,19 +354,23 @@ router.post('/send-onboarding', async (req, res) => {
 
     // Save employee details
     await client.query(
-      `INSERT INTO employee_details (user_id, job_title, employment_type, start_date, hourly_rate, overtime_rate, manager, department, sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO employee_details (user_id, job_title, employment_type, start_date, hourly_rate, overtime_rate, manager, department, sick_leave_option, sick_leave_exempt, emergency_decl, emergency_details, employment_classification, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [userId, jobTitle, employmentType, startDate, hourlyRate, overtimeRate, manager, department,
        sickLeaveOption || '1', sickLeaveExemptReason || null,
        hasEmergencyDeclaration === 'yes', emergencyDeclarationDetails || null,
-       req.user.id]
+       classification, req.user.id]
     );
 
-    // Seed employee_sections rows (one per section)
+    // Seed employee_sections rows — filtered by employment classification and job title
     await client.query(
       `INSERT INTO employee_sections (user_id, section_id, status)
-       SELECT $1, id, 'Not Started' FROM sections WHERE is_active = TRUE`,
-      [userId]
+       SELECT $1, s.id, 'Not Started' FROM sections s
+       WHERE s.is_active = TRUE
+         AND (s.employment_classification_filter IS NULL
+              OR s.employment_classification_filter = $2)
+         AND (s.job_title_filter IS NULL OR s.job_title_filter = $3)`,
+      [userId, classification, jobTitle]
     );
 
     await client.query('COMMIT');
@@ -415,6 +470,26 @@ router.post('/initiate-termination', async (req, res) => {
   } catch (err) {
     console.error('Initiate termination error:', err);
     res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// ── GET /api/hr/documents/blank-template ──────────────────────────────────────
+// Downloads a blank (unsigned) copy of the full onboarding packet — all active
+// sections in order, with empty signature lines — for printing or reference.
+router.get('/documents/blank-template', async (req, res) => {
+  try {
+    const filePath = await generateBlankOnboardingTemplate();
+    const fs = require('fs');
+    const { size } = fs.statSync(filePath);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', size);
+    res.setHeader('Content-Disposition', 'attachment; filename="Angel_Trans_Onboarding_Packet_Blank_Template.pdf"');
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    stream.on('close', () => fs.unlink(filePath, () => {}));
+  } catch (err) {
+    console.error('Blank template generation error:', err);
+    res.status(500).json({ message: 'Failed to generate blank template.' });
   }
 });
 

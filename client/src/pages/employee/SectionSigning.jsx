@@ -112,15 +112,15 @@ export default function SectionSigning() {
   return (
     <div className="min-h-screen bg-surface">
       <EmployeeNav />
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-3">
           <button onClick={() => navigate("/onboarding")}
             className="flex items-center gap-1.5 text-secondary hover:text-primary text-body-md transition-colors">
             <span className="material-symbols-outlined text-xl">arrow_back</span> Back to Dashboard
           </button>
           <span className="text-label-md text-secondary bg-surface-container px-3 py-1.5 rounded-lg">
-            Section {section?.sectionNumber} of 28
+            Section {section?.sectionNumber} of {section?.totalSections ?? "—"}
           </span>
         </div>
 
@@ -129,7 +129,7 @@ export default function SectionSigning() {
           <div className="card">
             <h2 className="font-headline font-bold text-headline-md text-on-surface mb-4">{section?.title}</h2>
             <p className="text-secondary text-body-md mb-4">Please read the policy below and provide your signature.</p>
-            <div className="prose prose-sm max-w-none text-on-surface text-body-md leading-relaxed max-h-[60vh] overflow-y-auto pr-2 space-y-3">
+            <div className="prose prose-sm max-w-none text-on-surface text-body-md leading-relaxed max-h-[50vh] sm:max-h-[60vh] overflow-y-auto pr-2 space-y-3">
               {section?.content?.split('\n').map((para, i) =>
                 para.trim() ? <p key={i}>{para}</p> : null
               )}
@@ -219,7 +219,7 @@ export default function SectionSigning() {
                 onChange={e => setFields(p => ({...p, date: e.target.value}))} />
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button onClick={handleSave} disabled={saving}
                 className="btn-secondary flex-1 flex items-center justify-center gap-2">
                 <span className="material-symbols-outlined text-xl">save</span>
