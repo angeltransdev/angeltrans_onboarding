@@ -110,10 +110,20 @@ export default function EmployeeDetail() {
   const handleGeneratePDF = async () => {
     setGenerating(true);
     try {
-      const res = await api.post(`/hr/employees/${id}/generate-pdf`);
-      alert(res.data.message || "PDF generated successfully.");
+      const res = await api.post(`/hr/employees/${id}/generate-pdf`, {}, {
+        responseType: "blob",
+        timeout: 60000,
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(employee?.name || "employee").replace(/[^a-zA-Z0-9]/g, "_")}_Onboarding_Progress.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      const msg = err.response?.data?.message || "PDF generation failed.";
+      const msg = await readBlobError(err) || "Progress PDF generation failed.";
       alert(msg);
     } finally {
       setGenerating(false);
@@ -148,7 +158,8 @@ export default function EmployeeDetail() {
     </div>
   );
 
-  const progress = sections.length ? Math.round(sections.filter(s=>s.signed).length/sections.length*100) : 0;
+  const completedSectionCount = sections.filter(s => s.signed).length;
+  const progress = sections.length ? Math.round(completedSectionCount / sections.length * 100) : 0;
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -188,12 +199,13 @@ export default function EmployeeDetail() {
                 <span className="material-symbols-outlined text-xl">send</span>
                 {resending ? "Sending..." : "Resend Link"}
               </button>
-              <button onClick={handleGeneratePDF} disabled={generating}
+              <button onClick={handleGeneratePDF} disabled={generating || completedSectionCount === 0}
+                title={completedSectionCount === 0 ? "Complete at least one section to download a progress PDF." : undefined}
                 className="btn-secondary flex items-center gap-2 text-sm">
                 {generating
                   ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   : <span className="material-symbols-outlined text-xl">picture_as_pdf</span>}
-                {generating ? "Generating..." : "Generate PDF"}
+                {generating ? "Preparing..." : completedSectionCount === 0 ? "Complete a Section First" : "Download Progress PDF"}
               </button>
               <button onClick={handleDownload} disabled={downloading}
                 className="btn-primary flex items-center gap-2 text-sm">

@@ -342,7 +342,7 @@ const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, de
     // Employee signed — vector checkmark, or an empty box for unsigned templates
     const checkCX = COL.emp + CW.emp / 2;
     const checkCY = y + rowH / 2;
-    if (blank) {
+    if (blank || s.status !== 'Completed') {
       const bs = 9;
       doc.rect(checkCX - bs / 2, checkCY - bs / 2, bs, bs).strokeColor('#999').lineWidth(0.8).stroke();
     } else {
@@ -416,20 +416,20 @@ const renderCompletionChecklist = (doc, startY, allSections, section, hrUser, de
 };
 
 // ── Generate Onboarding PDF ────────────────────────────────────────────────────
-const generateOnboardingPDF = async (userId) => {
+const generateOnboardingPDF = async (userId, { progressOnly = false } = {}) => {
   const [userRes, detailRes, sectionsRes, hrRes, settingsRes] = await Promise.all([
     db.query('SELECT * FROM users WHERE id=$1', [userId]),
     db.query(`SELECT ed.*, u.name, u.email, u.phone
               FROM employee_details ed JOIN users u ON u.id=ed.user_id
               WHERE ed.user_id=$1`, [userId]),
     db.query(`SELECT s.section_number, s.title, s.content,
+                     es.status,
                      es.signature, es.printed_name, es.date_signed,
                      es.signed_at, es.ip_address
               FROM sections s
               JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
               JOIN employee_details ed ON ed.user_id=$1
-              WHERE es.status='Completed'
-                AND (s.employment_classification_filter IS NULL
+              WHERE (s.employment_classification_filter IS NULL
                      OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2'))
                 AND (s.job_title_filter IS NULL OR s.job_title_filter = ed.job_title)
               ORDER BY COALESCE(s.display_order, s.section_number)`, [userId]),
@@ -443,6 +443,7 @@ const generateOnboardingPDF = async (userId) => {
   const user     = userRes.rows[0];
   const details  = detailRes.rows[0];
   const sections = sectionsRes.rows;
+  const completedSections = sections.filter(section => section.status === 'Completed');
   const hrUser   = hrRes.rows[0] || null;
   const company  = settingsRes.rows[0] || {};
 
@@ -468,13 +469,13 @@ const generateOnboardingPDF = async (userId) => {
     doc.fillColor('#fff').font('Helvetica-Bold').fontSize(20)
        .text('Angel Trans LLC', ML, 16, { width: TW });
     doc.font('Helvetica').fontSize(9)
-       .text('Employee Orientation Packet — Signed Copy', ML, 40, { width: TW });
+       .text(progressOnly ? 'Employee Orientation Packet — HR Progress Copy' : 'Employee Orientation Packet — Signed Copy', ML, 40, { width: TW });
 
     let y = 78;
     doc.fillColor(DARK).font('Helvetica-Bold').fontSize(20)
        .text('Orientation & Onboarding Packet', ML, y, { width: TW, align: 'center' }); y += 32;
     doc.fillColor(GREY).font('Helvetica').fontSize(11)
-       .text('Signed Copy — Confidential', ML, y, { width: TW, align: 'center' }); y += 22;
+       .text(progressOnly ? 'Progress Copy — Not a Completion Record' : 'Signed Copy — Confidential', ML, y, { width: TW, align: 'center' }); y += 22;
     doc.moveTo(ML, y).lineTo(W - MR, y).strokeColor(RED).lineWidth(1.5).stroke(); y += 20;
 
     // Info grid — 4 rows × 2 columns
@@ -506,19 +507,21 @@ const generateOnboardingPDF = async (userId) => {
     }
 
     doc.fillColor(DARK).font('Helvetica').fontSize(10.5)
-       .text(`This packet contains ${sections.length} completed and signed sections.`, ML, y,
+       .text(`This packet contains ${completedSections.length} of ${sections.length} applicable sections completed and signed.`, ML, y,
              { width: TW, align: 'center' }); y += 18;
     doc.fillColor(GREY).font('Helvetica').fontSize(9)
        .text(`Date Issued: ${dateSent}   ·   Generated: ${fmt(new Date())}`, ML, y,
              { width: TW, align: 'center' });
 
     // ── SECTIONS ───────────────────────────────────────────────────
-    sections.forEach((section) => {
+    completedSections.forEach((section) => {
       const isChecklist = section.section_number === 28 ||
                           /completion checklist/i.test(section.title);
 
       doc.addPage();
-      pageHeader(doc, `SECTION ${section.section_number} OF ${sections.length}`, section.title);
+      pageHeader(doc, progressOnly
+        ? `SECTION ${section.section_number} — HR PROGRESS COPY`
+        : `SECTION ${section.section_number} OF ${sections.length}`, section.title);
 
       let sy = 62;
 
@@ -547,6 +550,12 @@ const generateOnboardingPDF = async (userId) => {
 
     doc.end();
   });
+
+  if (progressOnly) {
+    logActivity({ userId, eventType: 'progress_pdf_generated', description: 'HR generated an onboarding progress PDF' });
+    console.log(`✅ HR onboarding progress PDF generated: ${fileName}`);
+    return outputPath;
+  }
 
   // Replace old DB record
   await db.query(`DELETE FROM documents WHERE user_id=$1 AND type='Onboarding Packet'`, [userId]);

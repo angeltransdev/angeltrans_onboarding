@@ -11,6 +11,25 @@ const { injectFields } = require('../utils/injectFields');
 // All HR routes require authentication + HR role
 router.use(authenticate, requireHR);
 
+const getOnboardingProgress = async (employeeId) => {
+  const { rows } = await db.query(`
+    SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE es.status='Completed') AS completed
+    FROM sections s
+    JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
+    JOIN employee_details ed ON ed.user_id=$1
+    WHERE s.is_active=TRUE
+      AND (s.employment_classification_filter IS NULL
+           OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2'))
+      AND (s.job_title_filter IS NULL OR s.job_title_filter = ed.job_title)
+  `, [employeeId]);
+
+  return {
+    total: parseInt(rows[0].total, 10) || 0,
+    completed: parseInt(rows[0].completed, 10) || 0,
+  };
+};
+
 // ── GET /api/hr/stats ────────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
@@ -221,6 +240,11 @@ router.post('/employees/:id/resend', async (req, res) => {
 // ── GET /api/hr/employees/:id/download ───────────────────────────────────────
 router.get('/employees/:id/download', async (req, res) => {
   try {
+    const progress = await getOnboardingProgress(req.params.id);
+    if (progress.completed === 0) {
+      return res.status(400).json({ message: 'Cannot download an onboarding PDF until at least one section is complete.' });
+    }
+
     const { rows } = await db.query(
       'SELECT * FROM documents WHERE user_id=$1 AND type=$2 ORDER BY created_at DESC LIMIT 1',
       [req.params.id, 'Onboarding Packet']
@@ -253,34 +277,23 @@ router.post('/employees/:id/generate-pdf', async (req, res) => {
     );
     if (!userRows[0]) return res.status(404).json({ message: 'Employee not found.' });
 
-    // Check completion status — filtered to only sections that apply to this employee's classification + job title
-    const progress = await db.query(`
-      SELECT COUNT(*) AS total,
-             COUNT(*) FILTER (WHERE es.status='Completed') AS completed
-      FROM sections s
-      JOIN employee_sections es ON es.section_id=s.id AND es.user_id=$1
-      JOIN employee_details ed ON ed.user_id=$1
-      WHERE s.is_active=TRUE
-        AND (s.employment_classification_filter IS NULL
-             OR s.employment_classification_filter = COALESCE(ed.employment_classification, 'W2'))
-        AND (s.job_title_filter IS NULL OR s.job_title_filter = ed.job_title)
-    `, [empId]);
+    const progress = await getOnboardingProgress(empId);
+    const { total, completed } = progress;
 
-    const total     = parseInt(progress.rows[0].total);
-    const completed = parseInt(progress.rows[0].completed);
-
-    if (total === 0 || total !== completed) {
+    if (total === 0 || completed === 0) {
       return res.status(400).json({
-        message: `Cannot generate PDF — employee has only completed ${completed} of ${total} sections.`
+        message: `Cannot generate a progress PDF until at least one section is complete (${completed} of ${total} completed).`
       });
     }
 
-    // Fire-and-forget — LibreOffice can take 30-60 s; don't block the HTTP request
-    generateOnboardingPDF(empId)
-      .then(() => console.log(`✅ HR-triggered PDF ready for ${empId}`))
-      .catch(err => console.error(`❌ HR-triggered PDF failed for ${empId}:`, err.message));
-
-    res.json({ message: 'PDF generation started. Please wait a moment, then download.', ready: false });
+    const filePath = await generateOnboardingPDF(empId, { progressOnly: true });
+    const name = userRows[0].name?.replace(/[^a-zA-Z0-9]/g, '_') || 'employee';
+    res.download(filePath, `${name}_Onboarding_Progress.pdf`, err => {
+      if (err) {
+        console.error('HR progress PDF download error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Failed to download progress PDF.' });
+      }
+    });
   } catch (err) {
     console.error('HR generate-pdf error:', err);
     res.status(500).json({ message: `PDF generation failed: ${err.message}` });
