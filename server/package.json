@@ -5,7 +5,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed": "node models/seed.js"
+    "seed": "node models/seed.js",
+    "migrate:assets": "node models/migrate_assets.js",
+    "remind:assets": "node jobs/assetReminders.js",
+    "test:assets": "node --test tests/assetApi.test.js tests/assetLogic.test.js tests/assetPostgres.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,5 +22,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

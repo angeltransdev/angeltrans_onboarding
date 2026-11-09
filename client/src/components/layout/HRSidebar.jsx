@@ -9,6 +9,7 @@ const navItems = [
   { to: "/hr/send-onboarding", icon: "send", label: "Send Onboarding" },
   { to: "/hr/terminations", icon: "person_off", label: "Terminations" },
   { to: "/hr/documents", icon: "folder_open", label: "Documents" },
+  { to: "/hr/assets", icon: "inventory_2", label: "Assets" },
   { to: "/hr/admins", icon: "admin_panel_settings", label: "Admin Management" },
   { to: "/hr/settings", icon: "business", label: "Company Settings" },
 ];

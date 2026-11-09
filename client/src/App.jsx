@@ -26,6 +26,7 @@ import TerminatedEmployees from "./pages/hr/TerminatedEmployees";
 import DocumentLibrary from "./pages/hr/DocumentLibrary";
 import AdminManagement from "./pages/hr/AdminManagement";
 import CompanySettings from "./pages/hr/CompanySettings";
+import AssetManagement from "./pages/hr/AssetManagement";
 
 const EMP = ["employee"];
 const HR  = ["hr_admin", "owner"];
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="/hr/documents" element={<ProtectedRoute roles={HR}><DocumentLibrary /></ProtectedRoute>} />
           <Route path="/hr/admins" element={<ProtectedRoute roles={HR}><AdminManagement /></ProtectedRoute>} />
           <Route path="/hr/employees" element={<ProtectedRoute roles={HR}><HRDashboard /></ProtectedRoute>} />
+          <Route path="/hr/assets" element={<ProtectedRoute roles={HR}><AssetManagement /></ProtectedRoute>} />
           <Route path="/hr/settings" element={<ProtectedRoute roles={HR}><CompanySettings /></ProtectedRoute>} />
 
           {/* 404 */}
