@@ -47,3 +47,8 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subject VARCHAR(500) NOT NULL DEFA
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(100) NOT NULL DEFAULT '';
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_conditions TEXT NOT NULL DEFAULT '';
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS adjustment_cents BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_status_check;
+ALTER TABLE invoices ADD CONSTRAINT invoices_status_check CHECK (status IN ('Draft', 'Approved', 'Sent', 'Paid'));
+ALTER TABLE invoice_activity DROP CONSTRAINT IF EXISTS invoice_activity_event_check;
+ALTER TABLE invoice_activity ADD CONSTRAINT invoice_activity_event_check CHECK (event IN ('Approved', 'Returned to draft', 'Sent', 'Viewed', 'Paid'));

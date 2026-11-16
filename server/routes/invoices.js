@@ -96,6 +96,20 @@ router.put('/:id', asyncRoute(async (req, res) => {
   if (!rows.length) return res.status(400).json({ message: 'Invoice must be a draft and the customer must exist.' });
   res.json(rows[0]);
 }));
+router.delete('/:id', asyncRoute(async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT status FROM invoices WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!result.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Invoice not found.' }); }
+    if (result.rows[0].status !== 'Draft') { await client.query('ROLLBACK'); return res.status(400).json({ message: 'Only draft invoices can be deleted.' }); }
+    await client.query('DELETE FROM invoice_activity WHERE invoice_id=$1', [req.params.id]);
+    await client.query('DELETE FROM invoices WHERE id=$1', [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ message: 'Draft invoice deleted.' });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
+}));
 router.get('/:id', asyncRoute(async (req, res) => {
   const { rows } = await db.query(`${queryInvoice} WHERE i.id=$1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ message: 'Invoice not found.' });
@@ -109,6 +123,37 @@ router.get('/:id/pdf', asyncRoute(async (req, res) => {
   if (!invoice.company) invoice.company = await company(db.query);
   const pdf = await invoicePdf(invoice);
   res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="invoice-${invoice.number}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+}));
+router.post('/:id/approve', asyncRoute(async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(`${queryInvoice} WHERE i.id=$1 FOR UPDATE OF i`, [req.params.id]);
+    const invoice = result.rows[0];
+    if (!invoice) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Invoice not found.' }); }
+    if (invoice.status !== 'Draft') { await client.query('ROLLBACK'); return res.status(400).json({ message: 'Only draft invoices can be approved.' }); }
+    const companySnapshot = await company(client.query.bind(client));
+    await client.query(`UPDATE invoices SET status='Approved',customer_snapshot=$1,company_snapshot=$2,updated_at=NOW() WHERE id=$3`,
+      [JSON.stringify(invoice.customer), JSON.stringify(companySnapshot), invoice.id]);
+    await client.query("INSERT INTO invoice_activity (invoice_id,event,actor_id) VALUES ($1,'Approved',$2)", [invoice.id, req.user.id]);
+    await client.query('COMMIT');
+    res.json({ message: 'Invoice approved.' });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
+}));
+router.post('/:id/return-to-draft', asyncRoute(async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT status FROM invoices WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!result.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Invoice not found.' }); }
+    if (result.rows[0].status !== 'Approved') { await client.query('ROLLBACK'); return res.status(400).json({ message: 'Only approved, unpaid invoices can be returned to draft.' }); }
+    await client.query("UPDATE invoices SET status='Draft',customer_snapshot=NULL,company_snapshot=NULL,updated_at=NOW() WHERE id=$1", [req.params.id]);
+    await client.query("INSERT INTO invoice_activity (invoice_id,event,actor_id) VALUES ($1,'Returned to draft',$2)", [req.params.id, req.user.id]);
+    await client.query('COMMIT');
+    res.json({ message: 'Invoice returned to draft.' });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
 }));
 router.post('/:id/send', asyncRoute(async (req, res) => {
   const client = await db.pool.connect();
@@ -126,7 +171,7 @@ router.post('/:id/send', asyncRoute(async (req, res) => {
     const token = crypto.randomBytes(32).toString('hex');
     url.hash = token;
     if (!invoice.company) invoice.company = await company(client.query.bind(client));
-    const pdf = await invoicePdf(invoice);
+    const pdf = await invoicePdf({ ...invoice, status: 'Sent' });
     await client.query(`UPDATE invoices SET customer_snapshot=$1,company_snapshot=$2,view_token_hash=$3,status='Sent',sent_at=NOW(),updated_at=NOW() WHERE id=$4`,
       [JSON.stringify(invoice.customer), JSON.stringify(invoice.company), hash(token), invoice.id]);
     await client.query("INSERT INTO invoice_activity (invoice_id,event,actor_id) VALUES ($1,'Sent',$2)", [invoice.id, req.user.id]);
@@ -151,8 +196,8 @@ router.post('/:id/paid', asyncRoute(async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query("UPDATE invoices SET status='Paid',paid_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='Sent' RETURNING id", [req.params.id]);
-    if (!result.rows.length) { await client.query('ROLLBACK'); return res.status(400).json({ message: 'Only sent invoices can be marked paid.' }); }
+    const result = await client.query("UPDATE invoices SET status='Paid',paid_at=NOW(),updated_at=NOW() WHERE id=$1 AND status IN ('Approved','Sent') RETURNING id", [req.params.id]);
+    if (!result.rows.length) { await client.query('ROLLBACK'); return res.status(400).json({ message: 'Only approved or sent invoices can be marked paid.' }); }
     await client.query("INSERT INTO invoice_activity (invoice_id,event,actor_id) VALUES ($1,'Paid',$2)", [req.params.id, req.user.id]);
     await client.query('COMMIT');
     res.json({ message: 'Invoice marked paid.' });

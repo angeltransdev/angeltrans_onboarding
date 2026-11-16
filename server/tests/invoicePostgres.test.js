@@ -2,10 +2,24 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
 const { Pool } = require('pg');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../models/db');
+
+function pdfText(pdf) {
+  const parts = [];
+  for (const match of pdf.toString('latin1').matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    let stream;
+    try { stream = zlib.inflateSync(Buffer.from(match[1], 'latin1')).toString(); }
+    catch (err) { if (err.code === 'Z_DATA_ERROR') continue; throw err; }
+    for (const text of stream.matchAll(/\[([^\]]+)\] TJ/g)) {
+      parts.push([...text[1].matchAll(/<([0-9a-f]+)>/g)].map(hex => Buffer.from(hex[1], 'hex').toString('latin1')).join(''));
+    }
+  }
+  return parts.join('\n');
+}
 
 const connectionString = process.env.INVOICE_TEST_DATABASE_URL;
 test('invoice lifecycle with isolated PostgreSQL and stubbed email', { skip: !connectionString }, async () => {
@@ -79,6 +93,71 @@ test('invoice lifecycle with isolated PostgreSQL and stubbed email', { skip: !co
       adjustmentCents: -500, orderNumber: 'PO-1', subject: 'Transport', paymentTerms: 'Net 30', termsConditions: 'Terms',
       notes: 'Thank you', paymentInstructions: 'Bank transfer' };
     assert.equal((await req('/', 'POST', { ...draft, dueDate: '2025-01-01' })).status, 400);
+    const printDraft = await req('/', 'POST', draft);
+    const printId = printDraft.data.id;
+    assert.equal((await req(`/${printId}/paid`, 'POST')).status, 400);
+    assert.equal((await req(`/${printId}/approve`, 'POST', null, employee)).status, 403);
+    assert.equal((await req(`/${printId}/approve`, 'POST')).status, 200);
+    assert.equal(messages.length, 0);
+    assert.equal((await req(`/${printId}/approve`, 'POST')).status, 400);
+    assert.equal((await req(`/${printId}`, 'PUT', draft)).status, 400);
+    const approved = (await req(`/${printId}`)).data;
+    assert.equal(approved.status, 'Approved');
+    assert.deepEqual(approved.activity.map(a => a.event), ['Approved']);
+    const approvedPdf = pdfText((await req(`/${printId}/pdf`)).pdf);
+    assert.match(approvedPdf, /Invoice #\d+   \|   Approved/);
+    assert.doesNotMatch(approvedPdf, /Draft/);
+    assert.equal((await req(`/${printId}/paid`, 'POST')).status, 200);
+    assert.equal((await req(`/${printId}`)).data.status, 'Paid');
+    assert.equal((await req(`/${printId}/approve`, 'POST')).status, 400);
+    assert.equal((await req(`/${printId}/return-to-draft`, 'POST')).status, 400);
+    assert.equal((await req(`/${printId}`, 'DELETE')).status, 400);
+
+    const reversible = (await req('/', 'POST', draft)).data.id;
+    assert.equal((await req(`/${reversible}/return-to-draft`, 'POST')).status, 400);
+    assert.equal((await req(`/${reversible}/approve`, 'POST')).status, 200);
+    assert.equal((await req(`/${reversible}`, 'DELETE')).status, 400);
+    assert.equal((await req(`/${reversible}/return-to-draft`, 'POST', null, employee)).status, 403);
+    await req(`/customers/${customer.data.id}`, 'PUT', { name: 'Updated customer', email: 'updated@example.test', address: 'New address' });
+    await pool.query("UPDATE company_settings SET name='Updated company' WHERE id=1");
+    assert.equal((await req(`/${reversible}/return-to-draft`, 'POST', null, hr)).status, 200);
+    const reopened = (await req(`/${reversible}`)).data;
+    assert.equal(reopened.status, 'Draft');
+    assert.equal(reopened.customer.name, 'Updated customer');
+    assert.equal(reopened.company, null);
+    assert.deepEqual(reopened.activity.map(a => a.event), ['Returned to draft', 'Approved']);
+    assert.equal((await req(`/${reversible}`, 'PUT', draft)).status, 200);
+    assert.equal((await req(`/${reversible}/approve`, 'POST')).status, 200);
+    const reapproved = (await req(`/${reversible}`)).data;
+    assert.equal(reapproved.customer.name, 'Updated customer');
+    assert.equal(reapproved.company.name, 'Updated company');
+    assert.equal((await req(`/${reversible}/return-to-draft`, 'POST')).status, 200);
+    assert.equal((await req(`/${reversible}`, 'DELETE', null, employee)).status, 403);
+    assert.equal((await req(`/${reversible}`, 'DELETE', null, hr)).status, 200);
+    assert.equal((await req(`/${reversible}`)).status, 404);
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM invoice_activity WHERE invoice_id=$1', [reversible])).rows[0].count, 0);
+    assert.equal((await req(`/${reversible}`, 'DELETE')).status, 404);
+    await req(`/customers/${customer.data.id}`, 'PUT', { name: 'Customer', email: 'customer@example.test', address: 'Old address' });
+    await pool.query("UPDATE company_settings SET name='Angel Trans LLC' WHERE id=1");
+
+    const approvedToSend = await req('/', 'POST', draft);
+    const approvedToSendId = approvedToSend.data.id;
+    assert.equal((await req(`/${approvedToSendId}/approve`, 'POST')).status, 200);
+    await req(`/customers/${customer.data.id}`, 'PUT', { name: 'Updated customer', email: 'updated@example.test', address: 'New address' });
+    await pool.query("UPDATE company_settings SET name='Updated company' WHERE id=1");
+    const frozen = (await req(`/${approvedToSendId}`)).data;
+    assert.equal(frozen.customer.name, 'Customer');
+    assert.equal(frozen.company.name, 'Angel Trans LLC');
+    assert.equal((await req(`/${approvedToSendId}/send`, 'POST')).status, 200);
+    assert.equal(messages[0].to, 'customer@example.test');
+    assert.match(pdfText(messages[0].attachments[0].content), /Invoice #\d+   \|   Sent/);
+    assert.match(pdfText(messages[0].attachments[0].content), /Angel Trans LLC/);
+    assert.equal((await req(`/${approvedToSendId}`)).data.status, 'Sent');
+    assert.equal((await req(`/${approvedToSendId}/return-to-draft`, 'POST')).status, 400);
+    assert.equal((await req(`/${approvedToSendId}`, 'DELETE')).status, 400);
+    messages.length = 0;
+    await req(`/customers/${customer.data.id}`, 'PUT', { name: 'Customer', email: 'customer@example.test', address: 'Old address' });
+    await pool.query("UPDATE company_settings SET name='Angel Trans LLC' WHERE id=1");
     const created = await req('/', 'POST', draft);
     assert.equal(created.status, 201);
     const id = created.data.id;
@@ -99,6 +178,9 @@ test('invoice lifecycle with isolated PostgreSQL and stubbed email', { skip: !co
     assert.equal(messages.length, 1);
     assert.equal(messages[0].to, 'customer@example.test');
     assert.equal(messages[0].attachments[0].content.subarray(0, 5).toString(), '%PDF-');
+    const sentPdf = pdfText(messages[0].attachments[0].content);
+    assert.match(sentPdf, /Invoice #\d+   \|   Sent/);
+    assert.doesNotMatch(sentPdf, /Draft/);
     const firstToken = new URL(messages[0].html.match(/href="([^"]+)"/)[1]).hash.slice(1);
     assert.equal((await req(`/${id}`, 'PUT', draft)).status, 400);
     await req(`/customers/${customer.data.id}`, 'PUT', { name: 'Changed', email: 'new@example.test', address: 'New address' });

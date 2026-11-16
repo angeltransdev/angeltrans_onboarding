@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../services/api";
 import { Alert, dateTime, errorMessage, InvoiceContent, Layout } from "./shared";
 
 export default function InvoiceDetails() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -13,14 +14,25 @@ export default function InvoiceDetails() {
   const load = useCallback(async () => { const r = await api.get(`/invoices/${id}`); setInvoice(r.data); }, [id]);
   useEffect(() => { load().catch(e => setError(errorMessage(e, "Could not load invoice."))).finally(() => setLoading(false)); }, [load]);
   const action = async (type) => {
-    const question = type === "send" ? `Email this invoice to ${invoice.customer.email}? Sending locks the invoice; resending invalidates the previous viewing link.` : "Mark this invoice as paid?";
+    const question = type === "return-to-draft" ? "Return this invoice to draft? It can be edited or deleted. Previously printed copies may no longer match, and current customer and company details will be used when it is approved again."
+      : type === "approve" ? "Approve this invoice? It will be locked against editing and can be printed, emailed, or marked paid."
+      : type === "send" ? `Email this invoice to ${invoice.customer.email}? Sending locks the invoice; resending invalidates the previous viewing link.` : "Mark this invoice as paid?";
     if (!window.confirm(question)) return;
     setBusy(true); setError(""); setSuccess("");
     try {
       await api.post(`/invoices/${id}/${type}`);
-      setSuccess(type === "send" ? "Invoice sent." : "Invoice marked paid.");
+      setSuccess(type === "return-to-draft" ? "Invoice returned to draft." : type === "approve" ? "Invoice approved. You can now download it for printing." : type === "send" ? "Invoice sent." : "Invoice marked paid.");
       try { await load(); } catch { setError("Action succeeded, but the invoice could not be refreshed. Reload the page."); }
     } catch (err) { setError(errorMessage(err, "Could not complete the action.")); }
+    finally { setBusy(false); }
+  };
+  const deleteDraft = async () => {
+    if (!window.confirm(`Permanently delete draft invoice #${invoice.number} and its activity history? This cannot be undone.`)) return;
+    setBusy(true); setError(""); setSuccess("");
+    try {
+      await api.delete(`/invoices/${id}`);
+      navigate("/hr/invoice/invoices", { replace: true, state: { notice: `Draft invoice #${invoice.number} deleted.` } });
+    } catch (err) { setError(errorMessage(err, "Could not delete the draft invoice.")); }
     finally { setBusy(false); }
   };
   const download = async () => {
@@ -39,11 +51,14 @@ export default function InvoiceDetails() {
       <div className="flex flex-wrap gap-3 mb-4">
         <Link className="btn-secondary" to="/hr/invoice/invoices">Back</Link>
         {invoice.status === "Draft" && <Link className="btn-secondary" to={`/hr/invoice/invoices/${id}/edit`}>Edit draft</Link>}
+        {invoice.status === "Draft" && <button className="btn-primary" disabled={busy} onClick={() => action("approve")}>Approve invoice</button>}
+        {invoice.status === "Approved" && <button className="btn-secondary" disabled={busy} onClick={() => action("return-to-draft")}>Return to draft</button>}
         <button className="btn-secondary" disabled={busy} onClick={download}>Download PDF</button>
-        {invoice.status !== "Paid" && <button className="btn-primary" disabled={busy} onClick={() => action("send")}>{invoice.status === "Sent" ? "Resend email" : "Send email"}</button>}
-        {invoice.status === "Sent" && <button className="btn-secondary" disabled={busy} onClick={() => action("paid")}>Mark paid</button>}
+        {invoice.status !== "Paid" && <button className={invoice.status === "Draft" ? "btn-secondary" : "btn-primary"} disabled={busy} onClick={() => action("send")}>{invoice.status === "Sent" ? "Resend email" : "Send email"}</button>}
+        {["Approved", "Sent"].includes(invoice.status) && <button className="btn-secondary" disabled={busy} onClick={() => action("paid")}>Mark paid</button>}
+        {invoice.status === "Draft" && <button className="btn-danger" disabled={busy} onClick={deleteDraft}>Delete draft</button>}
       </div>
-      {invoice.status === "Draft" && <p className="mb-4 text-secondary">Draft preview. Company details are finalized when sent. Sent invoices cannot be edited.</p>}
+      {invoice.status === "Draft" && <p className="mb-4 text-secondary">Draft preview. Approve to print without emailing, or send by email. Either action finalizes the company and customer details and locks the invoice.</p>}
       <InvoiceContent invoice={invoice} />
       <section className="card mt-6"><h2 className="font-semibold text-headline-sm">Activity</h2>
         <p className="text-secondary mt-1">Views are recorded when the recipient opens the secure link and selects View invoice. PDF and email opens are not tracked.</p>
