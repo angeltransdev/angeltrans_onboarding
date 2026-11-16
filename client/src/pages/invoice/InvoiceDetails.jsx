@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../services/api";
 import { Alert, dateTime, errorMessage, InvoiceContent, Layout } from "./shared";
+import { confirmInvoiceAction, downloadInvoice, invoiceActionMessage } from "./actions";
 
 export default function InvoiceDetails() {
   const { id } = useParams();
@@ -14,20 +15,17 @@ export default function InvoiceDetails() {
   const load = useCallback(async () => { const r = await api.get(`/invoices/${id}`); setInvoice(r.data); }, [id]);
   useEffect(() => { load().catch(e => setError(errorMessage(e, "Could not load invoice."))).finally(() => setLoading(false)); }, [load]);
   const action = async (type) => {
-    const question = type === "return-to-draft" ? "Return this invoice to draft? It can be edited or deleted. Previously printed copies may no longer match, and current customer and company details will be used when it is approved again."
-      : type === "approve" ? "Approve this invoice? It will be locked against editing and can be printed, emailed, or marked paid."
-      : type === "send" ? `Email this invoice to ${invoice.customer.email}? Sending locks the invoice; resending invalidates the previous viewing link.` : "Mark this invoice as paid?";
-    if (!window.confirm(question)) return;
+    if (!confirmInvoiceAction(invoice, type)) return;
     setBusy(true); setError(""); setSuccess("");
     try {
       await api.post(`/invoices/${id}/${type}`);
-      setSuccess(type === "return-to-draft" ? "Invoice returned to draft." : type === "approve" ? "Invoice approved. You can now download it for printing." : type === "send" ? "Invoice sent." : "Invoice marked paid.");
+      setSuccess(invoiceActionMessage(type));
       try { await load(); } catch { setError("Action succeeded, but the invoice could not be refreshed. Reload the page."); }
     } catch (err) { setError(errorMessage(err, "Could not complete the action.")); }
     finally { setBusy(false); }
   };
   const deleteDraft = async () => {
-    if (!window.confirm(`Permanently delete draft invoice #${invoice.number} and its activity history? This cannot be undone.`)) return;
+    if (!confirmInvoiceAction(invoice, "delete")) return;
     setBusy(true); setError(""); setSuccess("");
     try {
       await api.delete(`/invoices/${id}`);
@@ -38,10 +36,7 @@ export default function InvoiceDetails() {
   const download = async () => {
     setBusy(true); setError("");
     try {
-      const response = await api.get(`/invoices/${id}/pdf`, { responseType: "blob" });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement("a"); link.href = url; link.download = `invoice-${invoice.number}.pdf`; link.click();
-      URL.revokeObjectURL(url);
+      await downloadInvoice(invoice);
     } catch { setError("Could not download the invoice PDF."); }
     finally { setBusy(false); }
   };
