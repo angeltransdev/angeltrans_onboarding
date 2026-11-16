@@ -7,8 +7,10 @@
     "dev": "nodemon index.js",
     "seed": "node models/seed.js",
     "migrate:assets": "node models/migrate_assets.js",
+    "migrate:invoices": "node models/migrate_invoices.js",
     "remind:assets": "node jobs/assetReminders.js",
-    "test:assets": "node --test tests/assetApi.test.js tests/assetLogic.test.js tests/assetPostgres.test.js"
+    "test:assets": "node --test tests/assetApi.test.js tests/assetLogic.test.js tests/assetPostgres.test.js",
+    "test:invoices": "node --test tests/invoiceLogic.test.js tests/invoicePostgres.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

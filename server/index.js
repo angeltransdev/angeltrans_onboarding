@@ -29,6 +29,7 @@ app.use(express.json());
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/hr',       require('./routes/hr'));
 app.use('/api/assets',   require('./routes/assets'));
+app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/employee', require('./routes/employee'));
 
 // Health check

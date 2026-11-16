@@ -27,6 +27,11 @@ import DocumentLibrary from "./pages/hr/DocumentLibrary";
 import AdminManagement from "./pages/hr/AdminManagement";
 import CompanySettings from "./pages/hr/CompanySettings";
 import AssetManagement from "./pages/hr/AssetManagement";
+import Customers from "./pages/invoice/Customers";
+import InvoiceList from "./pages/invoice/InvoiceList";
+import InvoiceForm from "./pages/invoice/InvoiceForm";
+import InvoiceDetails from "./pages/invoice/InvoiceDetails";
+import PublicInvoice from "./pages/invoice/PublicInvoice";
 
 const EMP = ["employee"];
 const HR  = ["hr_admin", "owner"];
@@ -42,6 +47,7 @@ export default function App() {
           <Route path="/set-password" element={<SetPassword />} />
           <Route path="/reset-password" element={<SetPassword />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/invoice/view" element={<PublicInvoice />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
 
           {/* Employee */}
@@ -63,6 +69,11 @@ export default function App() {
           <Route path="/hr/employees" element={<ProtectedRoute roles={HR}><HRDashboard /></ProtectedRoute>} />
           <Route path="/hr/assets" element={<ProtectedRoute roles={HR}><AssetManagement /></ProtectedRoute>} />
           <Route path="/hr/settings" element={<ProtectedRoute roles={HR}><CompanySettings /></ProtectedRoute>} />
+          <Route path="/hr/invoice/customers" element={<ProtectedRoute roles={HR}><Customers /></ProtectedRoute>} />
+          <Route path="/hr/invoice/invoices" element={<ProtectedRoute roles={HR}><InvoiceList /></ProtectedRoute>} />
+          <Route path="/hr/invoice/invoices/new" element={<ProtectedRoute roles={HR}><InvoiceForm /></ProtectedRoute>} />
+          <Route path="/hr/invoice/invoices/:id" element={<ProtectedRoute roles={HR}><InvoiceDetails /></ProtectedRoute>} />
+          <Route path="/hr/invoice/invoices/:id/edit" element={<ProtectedRoute roles={HR}><InvoiceForm /></ProtectedRoute>} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />

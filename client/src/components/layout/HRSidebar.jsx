@@ -1,6 +1,6 @@
 import { useState } from "react";
 import logo from '../../assets/logo.png';
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 const navItems = [
@@ -17,7 +17,9 @@ const navItems = [
 export const HRSidebar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [invoiceOpen, setInvoiceOpen] = useState(location.pathname.startsWith("/hr/invoice"));
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const close = () => setMobileOpen(false);
@@ -25,8 +27,8 @@ export const HRSidebar = () => {
   return (
     <>
       {/* Mobile top bar */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-on-surface flex items-center px-4 z-40 gap-3">
-        <button onClick={() => setMobileOpen(true)} className="text-white/80 hover:text-white transition-colors">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-on-surface flex items-center px-4 z-40 gap-3 shadow-lg">
+        <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="text-white/80 hover:text-white transition-colors">
           <span className="material-symbols-outlined text-2xl">menu</span>
         </button>
         <img src={logo} alt="Angel Trans LLC" className="h-8 object-contain brightness-0 invert" />
@@ -44,33 +46,34 @@ export const HRSidebar = () => {
       {/* Sidebar */}
       <aside
         className={`
-          w-64 min-h-screen bg-on-surface flex flex-col fixed left-0 top-0 z-50
+          w-64 h-screen bg-on-surface flex flex-col fixed left-0 top-0 z-50 shadow-xl
           transition-transform duration-300 ease-in-out
           ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0
         `}
       >
         {/* Logo */}
-        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+        <div className="px-5 py-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src={logo} alt="Angel Trans LLC" className="h-10 object-contain brightness-0 invert" />
             <div>
-              <p className="text-white/50 text-label-sm mt-1">HR Portal</p>
+              <p className="text-white/50 text-label-sm mt-1">Admin workspace</p>
             </div>
           </div>
-          <button className="lg:hidden text-white/60 hover:text-white transition-colors" onClick={close}>
+          <button aria-label="Close navigation" className="lg:hidden text-white/60 hover:text-white transition-colors" onClick={close}>
             <span className="material-symbols-outlined text-xl">close</span>
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          <p className="px-3 pt-1 pb-2 text-[10px] font-bold tracking-widest text-white/35">WORKSPACE</p>
           {navItems.map(({ to, icon, label }) => (
             <NavLink key={to} to={to} onClick={close}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-md transition-colors ${
                   isActive
-                    ? "bg-primary text-white font-semibold"
+                    ? "bg-primary text-white font-semibold shadow-md"
                     : "text-white/70 hover:bg-white/10 hover:text-white"
                 }`
               }>
@@ -78,6 +81,18 @@ export const HRSidebar = () => {
               {label}
             </NavLink>
           ))}
+          <p className="px-3 pt-5 pb-2 text-[10px] font-bold tracking-widest text-white/35">BILLING</p>
+          <button type="button" aria-expanded={invoiceOpen} onClick={() => setInvoiceOpen(!invoiceOpen)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-md text-white/70 hover:bg-white/10 hover:text-white">
+            <span className="material-symbols-outlined text-xl">receipt_long</span>
+            <span className="flex-1 text-left">Invoice</span>
+            <span className="material-symbols-outlined text-xl">{invoiceOpen ? "expand_less" : "expand_more"}</span>
+          </button>
+          {invoiceOpen && <div className="pl-8 space-y-1">
+            {[{ to: "/hr/invoice/customers", label: "Customers" }, { to: "/hr/invoice/invoices", label: "Invoices" }].map(item =>
+              <NavLink key={item.to} to={item.to} onClick={close} className={({ isActive }) =>
+                `block px-3 py-2 rounded-lg text-body-md ${isActive ? "bg-primary text-white font-semibold" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>{item.label}</NavLink>)}
+          </div>}
         </nav>
 
         {/* User */}
