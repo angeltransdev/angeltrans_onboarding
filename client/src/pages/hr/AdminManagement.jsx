@@ -1,199 +1,106 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { UserPlus, Trash2, Send } from "lucide-react";
 import { HRSidebar } from "../../components/layout/HRSidebar";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
+import "./workspace-ui.css";
+
+const emptyForm = () => ({ name: "", email: "", role: "hr_admin" });
 
 export default function AdminManagement() {
   const { user } = useAuth();
   const [admins, setAdmins] = useState([]);
-  const [form, setForm] = useState({ name:"", email:"", role:"hr_admin" });
+  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
-  const [grantCandidate, setGrantCandidate] = useState(null); // { userId, userName }
+  const [success, setSuccess] = useState("");
+  const [grantCandidate, setGrantCandidate] = useState(null);
   const [granting, setGranting] = useState(false);
+  const isOwner = user?.role === "owner";
 
-  const fetchAdmins = () => {
-    api.get("/hr/admins").then(r => setAdmins(r.data)).catch(()=>{}).finally(()=>setLoading(false));
+  const fetchAdmins = useCallback(async () => {
+    const response = await api.get("/hr/admins");
+    setAdmins(response.data);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    api.get("/hr/admins").then(r => { if (active) setAdmins(r.data); })
+      .catch(() => { if (active) setError("Could not load administrators. Please refresh the page."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const refreshAfterAction = async () => {
+    try { await fetchAdmins(); }
+    catch { setError("The action succeeded, but the list could not be refreshed. Please reload the page."); }
   };
-  useEffect(fetchAdmins, []);
-
-  const handleAdd = async (e) => {
-    e.preventDefault(); setError(""); setGrantCandidate(null); setAdding(true);
+  const handleAdd = async e => {
+    e.preventDefault(); setError(""); setSuccess(""); setGrantCandidate(null); setAdding(true);
     try {
       await api.post("/hr/admins", form);
-      setForm({ name:"", email:"", role:"hr_admin" });
-      setShowForm(false); fetchAdmins();
-    } catch(err) {
+      setForm(emptyForm()); setShowForm(false); setSuccess("Invitation sent.");
+      await refreshAfterAction();
+    } catch (err) {
       const data = err.response?.data;
-      if (err.response?.status === 409 && data?.canGrant) {
-        setGrantCandidate({ userId: data.userId, userName: data.userName });
-        setError(data.message);
-      } else {
-        setError(data?.message || "Failed to add admin.");
-      }
-    }
-    finally { setAdding(false); }
+      if (err.response?.status === 409 && data?.canGrant) setGrantCandidate({ userId: data.userId, userName: data.userName });
+      setError(data?.message || "Failed to add admin.");
+    } finally { setAdding(false); }
   };
-
   const handleGrant = async () => {
     if (!grantCandidate) return;
-    setGranting(true); setError("");
+    setGranting(true); setError(""); setSuccess("");
     try {
       const res = await api.post(`/hr/admins/grant/${grantCandidate.userId}`);
-      setGrantCandidate(null);
-      setForm({ name:"", email:"", role:"hr_admin" });
-      setShowForm(false);
-      fetchAdmins();
-      alert(res.data.message);
-    } catch(err) {
-      setError(err.response?.data?.message || "Failed to grant access.");
-    } finally {
-      setGranting(false);
-    }
+      setGrantCandidate(null); setForm(emptyForm()); setShowForm(false); setSuccess(res.data.message);
+      await refreshAfterAction();
+    } catch (err) { setError(err.response?.data?.message || "Failed to grant access."); }
+    finally { setGranting(false); }
   };
-
-  const handleRemove = async (id) => {
-    if(!confirm("Remove this admin?")) return;
-    try { await api.delete(`/hr/admins/${id}`); fetchAdmins(); }
-    catch { alert("Failed to remove admin."); }
+  const handleRemove = async admin => {
+    if (!window.confirm(`Remove admin access for ${admin.name}?`)) return;
+    setRemovingId(admin.id); setError(""); setSuccess("");
+    try {
+      await api.delete(`/hr/admins/${admin.id}`);
+      setSuccess(`Admin access removed for ${admin.name}.`);
+      await refreshAfterAction();
+    } catch (err) { setError(err.response?.data?.message || "Failed to remove admin."); }
+    finally { setRemovingId(null); }
   };
-
-  return (
-    <div className="flex min-h-screen bg-surface">
-      <HRSidebar />
-      <main className="lg:ml-64 flex-1 p-4 lg:p-8 mt-14 lg:mt-0 max-w-4xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="font-headline font-bold text-display-lg text-on-surface">Admin Management</h1>
-            <p className="text-secondary text-body-md mt-1">Manage who has HR admin access to this portal.</p>
-          </div>
-          {user?.role === "owner" && (
-            <button onClick={() => setShowForm(p=>!p)} className="btn-primary flex items-center gap-2">
-              <span className="material-symbols-outlined text-xl">person_add</span>
-              Add Admin
-            </button>
-          )}
-        </div>
-
-        {/* Add form */}
-        {showForm && (
-          <div className="card mb-6">
-            <h2 className="font-headline font-semibold text-headline-sm text-on-surface mb-4">Add New Admin</h2>
-            {error && (
-              <div className="mb-4 p-3 bg-error-container rounded-lg">
-                <p className="text-error text-body-md">{error}</p>
-              </div>
-            )}
-            {grantCandidate && (
-              <div className="mb-4 p-4 bg-surface-container rounded-xl border border-outline-variant flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-2xl">manage_accounts</span>
-                  <div>
-                    <p className="text-body-md font-semibold text-on-surface">Grant HR access to existing employee?</p>
-                    <p className="text-body-sm text-secondary mt-0.5">
-                      <strong>{grantCandidate.userName}</strong> already has an employee account. Granting HR access lets them use both the Employee Portal and the HR Portal — they keep their existing password and can switch between views after login.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button type="button" onClick={() => { setGrantCandidate(null); setError(""); }}
-                    className="btn-secondary text-sm">Cancel</button>
-                  <button type="button" onClick={handleGrant} disabled={granting}
-                    className="btn-primary text-sm flex items-center gap-2">
-                    {granting && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                    {granting ? "Granting..." : `Grant HR Access`}
-                  </button>
-                </div>
-              </div>
-            )}
-            <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-label-lg text-on-surface mb-1.5">Full Name *</label>
-                <input required placeholder="Full name" className="input-field"
-                  value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} />
-              </div>
-              <div>
-                <label className="block text-label-lg text-on-surface mb-1.5">Email Address *</label>
-                <input required type="email" placeholder="email@angeltrans.com" className="input-field"
-                  value={form.email} onChange={e => setForm(p=>({...p,email:e.target.value}))} />
-              </div>
-              <div>
-                <label className="block text-label-lg text-on-surface mb-1.5">Role *</label>
-                <select className="input-field" value={form.role} onChange={e => setForm(p=>({...p,role:e.target.value}))}>
-                  <option value="hr_admin">HR Admin</option>
-                  {user?.role === "owner" && <option value="owner">Owner</option>}
-                </select>
-              </div>
-              <div className="sm:col-span-3 flex gap-3">
-                <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" disabled={adding} className="btn-primary flex items-center gap-2">
-                  {adding ? "Adding..." : <><span className="material-symbols-outlined text-xl">send</span> Send Invitation</>}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        <div className="card p-0 overflow-hidden">
-          <div className="p-6 border-b border-outline-variant">
-            <h2 className="font-headline font-semibold text-headline-sm text-on-surface">Current Admins</h2>
-          </div>
-          {loading ? (
-            <div className="flex justify-center py-16">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-surface-container-low">
-                <tr>
-                  {["Name","Email","Role","Status",""].map(h => (
-                    <th key={h} className="text-left px-6 py-3 text-label-md text-secondary font-semibold">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant">
-                {admins.map(admin => (
-                  <tr key={admin.id} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-label-md font-bold">
-                          {admin.name.charAt(0)}
-                        </div>
-                        <span className="text-body-md font-semibold text-on-surface">{admin.name}
-                          {admin.id === user?.id && <span className="ml-2 text-label-sm text-secondary">(You)</span>}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-body-md text-secondary">{admin.email}</td>
-                    <td className="px-6 py-4">
-                      {admin.role === "owner" ? (
-                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-primary-light text-primary">Owner</span>
-                      ) : admin.role === "employee" ? (
-                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-surface-container text-secondary">Employee + HR</span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full text-label-md font-semibold bg-surface-container text-secondary">HR Admin</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4"><span className="badge-completed">Active</span></td>
-                    <td className="px-6 py-4">
-                      {user?.role === "owner" && admin.id !== user?.id && (
-                        <button onClick={() => handleRemove(admin.id)}
-                          className="text-error hover:text-red-800 transition-colors">
-                          <span className="material-symbols-outlined text-xl">delete</span>
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
+  const closeForm = () => { setShowForm(false); setGrantCandidate(null); setError(""); };
+  return <div className="flex min-h-screen"><HRSidebar />
+    <main className="admin-workspace lg:ml-64 flex-1 min-w-0 p-4 lg:p-8 mt-14 lg:mt-0"><div className="admin-page">
+      <header className="admin-page-head"><div><p className="admin-kicker">SETTINGS / ACCESS</p><h1>Admin Management</h1><p>Manage the people who have administrative access to your workspace.</p></div>
+        {isOwner && <button className="admin-button admin-button-primary" onClick={() => { if (showForm) closeForm(); else { setError(""); setSuccess(""); setShowForm(true); } }}><UserPlus size={17} /> {showForm ? "Close form" : "Add admin"}</button>}</header>
+      {error && <div role="alert" className="admin-alert">{error}</div>}
+      {success && <div role="status" className="admin-alert admin-success">{success}</div>}
+      {showForm && <section className="admin-panel admin-form" aria-labelledby="add-admin-heading"><h2 id="add-admin-heading">Invite an administrator</h2>
+        <p className="admin-form-subtitle">Enter their details and send an invitation to join the workspace.</p>
+        {grantCandidate && <div className="admin-grant"><strong>Grant HR access to an existing employee?</strong>
+          <p><strong>{grantCandidate.userName}</strong> already has an employee account. They can use both portals and keep their current password.</p>
+          <div className="admin-grant-actions"><button type="button" className="admin-button admin-button-secondary" onClick={() => { setGrantCandidate(null); setError(""); }}>Cancel</button>
+            <button type="button" className="admin-button admin-button-primary" onClick={handleGrant} disabled={granting}>{granting ? "Granting..." : "Grant HR access"}</button></div></div>}
+        <form onSubmit={handleAdd}><div className="admin-form-grid">
+          <label>Full name *<input required placeholder="Full name" className="admin-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></label>
+          <label>Email address *<input required type="email" placeholder="name@example.com" className="admin-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></label>
+          <label>Role *<select className="admin-input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}><option value="hr_admin">HR Admin</option><option value="owner">Owner</option></select></label>
+        </div><div className="admin-form-actions"><button type="submit" disabled={adding} className="admin-button admin-button-primary"><Send size={15} /> {adding ? "Sending..." : "Send invitation"}</button>
+          <button type="button" onClick={closeForm} className="admin-button admin-button-secondary">Cancel</button></div></form>
+      </section>}
+      <section className="admin-panel" aria-labelledby="admins-heading">
+        <div className="admin-panel-head"><div><h2 id="admins-heading">Administrators</h2><p>People with access to the HR workspace.</p></div>
+          {!loading && <span className="admin-count">{admins.length} {admins.length === 1 ? "admin" : "admins"}</span>}</div>
+        {loading ? <p className="admin-empty">Loading administrators...</p> : admins.length === 0 ? <p className="admin-empty">{error ? "Administrator information is unavailable." : "No administrators found."}</p> :
+          <><p className="admin-scroll-hint">Scroll the table to see actions.</p><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>ACTION</th></tr></thead>
+            <tbody>{admins.map(admin => <tr key={admin.id}><td><div className="admin-person"><span className="admin-avatar">{admin.name.charAt(0)}</span>
+              <div><strong>{admin.name}</strong>{admin.id === user?.id && <small>Your account</small>}</div></div></td>
+              <td>{admin.email}</td><td><span className="admin-status">{admin.role === "owner" ? "Owner" : admin.role === "employee" ? "Employee + HR" : "HR Admin"}</span></td>
+              <td><span className="admin-status admin-status-active">Active</span></td><td>
+                {isOwner && admin.id !== user?.id ? <button className="admin-button admin-button-danger" aria-label={`Remove admin access for ${admin.name}`} disabled={!!removingId} onClick={() => handleRemove(admin)}>
+                  <Trash2 size={14} /> {removingId === admin.id ? "Removing..." : "Remove"}</button> : <span className="text-slate-400">—</span>}
+              </td></tr>)}</tbody></table></div></>}
+      </section>
+    </div></main>
+  </div>;
 }

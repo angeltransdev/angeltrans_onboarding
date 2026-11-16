@@ -1,17 +1,23 @@
 import { useState } from "react";
-import logo from '../../assets/logo.png';
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { LayoutDashboard, UsersRound, UserPlus, UserRoundMinus, FolderOpen, Boxes, ShieldCheck, Building2, ReceiptText, ChevronDown, Menu, X, LogOut, ArrowRightLeft } from "lucide-react";
+import logo from "../../assets/logo.png";
 import { useAuth } from "../../context/AuthContext";
+import "./workspace.css";
 
-const navItems = [
-  { to: "/hr/dashboard", icon: "dashboard", label: "Dashboard" },
-  { to: "/hr/employees", icon: "group", label: "Employees" },
-  { to: "/hr/send-onboarding", icon: "send", label: "Send Onboarding" },
-  { to: "/hr/terminations", icon: "person_off", label: "Terminations" },
-  { to: "/hr/documents", icon: "folder_open", label: "Documents" },
-  { to: "/hr/assets", icon: "inventory_2", label: "Assets" },
-  { to: "/hr/admins", icon: "admin_panel_settings", label: "Admin Management" },
-  { to: "/hr/settings", icon: "business", label: "Company Settings" },
+const groups = [
+  { title: "OVERVIEW", items: [{ to: "/hr/dashboard", icon: LayoutDashboard, label: "Dashboard" }] },
+  { title: "PEOPLE", items: [
+    { to: "/hr/employees", icon: UsersRound, label: "Employees" },
+    { to: "/hr/send-onboarding", icon: UserPlus, label: "Send Onboarding" },
+    { to: "/hr/terminations", icon: UserRoundMinus, label: "Terminations" },
+    { to: "/hr/documents", icon: FolderOpen, label: "Documents" },
+  ] },
+  { title: "OPERATIONS", items: [{ to: "/hr/assets", icon: Boxes, label: "Assets" }] },
+  { title: "SETTINGS", items: [
+    { to: "/hr/admins", icon: ShieldCheck, label: "Admin Management" },
+    { to: "/hr/settings", icon: Building2, label: "Company Settings" },
+  ] },
 ];
 
 export const HRSidebar = () => {
@@ -20,108 +26,48 @@ export const HRSidebar = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [invoiceOpen, setInvoiceOpen] = useState(location.pathname.startsWith("/hr/invoice"));
-
-  const handleLogout = () => { logout(); navigate("/login"); };
   const close = () => setMobileOpen(false);
+  const signOut = () => { logout(); navigate("/login"); };
+  const navGroup = group => <div className="workspace-nav-group" key={group.title}>
+    <p className="workspace-nav-label">{group.title}</p>
+    {group.items.map(({ to, icon: Icon, label }) => <NavLink key={to} to={to} onClick={close}
+      className={({ isActive }) => `workspace-nav-link${isActive ? " is-active" : ""}`}>
+      <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+    </NavLink>)}
+  </div>;
 
-  return (
-    <>
-      {/* Mobile top bar */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-on-surface flex items-center px-4 z-40 gap-3 shadow-lg">
-        <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="text-white/80 hover:text-white transition-colors">
-          <span className="material-symbols-outlined text-2xl">menu</span>
-        </button>
-        <img src={logo} alt="Angel Trans LLC" className="h-8 object-contain brightness-0 invert" />
-        <span className="text-white/50 text-label-sm">HR Portal</span>
-      </header>
-
-      {/* Backdrop overlay */}
-      {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
-          onClick={close}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`
-          w-64 h-screen bg-on-surface flex flex-col fixed left-0 top-0 z-50 shadow-xl
-          transition-transform duration-300 ease-in-out
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
-          lg:translate-x-0
-        `}
-      >
-        {/* Logo */}
-        <div className="px-5 py-6 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src={logo} alt="Angel Trans LLC" className="h-10 object-contain brightness-0 invert" />
-            <div>
-              <p className="text-white/50 text-label-sm mt-1">Admin workspace</p>
-            </div>
-          </div>
-          <button aria-label="Close navigation" className="lg:hidden text-white/60 hover:text-white transition-colors" onClick={close}>
-            <span className="material-symbols-outlined text-xl">close</span>
+  return <>
+    <header className="workspace-mobile-bar lg:hidden">
+      <button type="button" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu size={21} /></button>
+      <img src={logo} alt="Angel Trans LLC" /><span>Admin workspace</span>
+    </header>
+    {mobileOpen && <button className="workspace-overlay lg:hidden" aria-label="Close navigation" onClick={close} />}
+    <aside className={`workspace-sidebar ${mobileOpen ? "workspace-sidebar-open" : ""}`}>
+      <div className="workspace-brand">
+        <img src={logo} alt="Angel Trans LLC" />
+        <div><strong>ANGEL TRANS</strong><span>ADMIN WORKSPACE</span></div>
+        <button className="workspace-close lg:hidden" aria-label="Close navigation" onClick={close}><X size={20} /></button>
+      </div>
+      <nav className="workspace-navigation" aria-label="Main navigation">
+        {groups.slice(0, 3).map(navGroup)}
+        <div className="workspace-nav-group">
+          <p className="workspace-nav-label">BILLING</p>
+          <button type="button" className={`workspace-nav-link workspace-nav-toggle${location.pathname.startsWith("/hr/invoice") ? " is-parent-active" : ""}`}
+            aria-expanded={invoiceOpen} onClick={() => setInvoiceOpen(!invoiceOpen)}>
+            <ReceiptText size={18} strokeWidth={1.8} /><span>Invoice</span><ChevronDown size={16} className={invoiceOpen ? "workspace-chevron-open" : ""} />
           </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          <p className="px-3 pt-1 pb-2 text-[10px] font-bold tracking-widest text-white/35">WORKSPACE</p>
-          {navItems.map(({ to, icon, label }) => (
-            <NavLink key={to} to={to} onClick={close}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-md transition-colors ${
-                  isActive
-                    ? "bg-primary text-white font-semibold shadow-md"
-                    : "text-white/70 hover:bg-white/10 hover:text-white"
-                }`
-              }>
-              <span className="material-symbols-outlined text-xl">{icon}</span>
-              {label}
-            </NavLink>
-          ))}
-          <p className="px-3 pt-5 pb-2 text-[10px] font-bold tracking-widest text-white/35">BILLING</p>
-          <button type="button" aria-expanded={invoiceOpen} onClick={() => setInvoiceOpen(!invoiceOpen)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-md text-white/70 hover:bg-white/10 hover:text-white">
-            <span className="material-symbols-outlined text-xl">receipt_long</span>
-            <span className="flex-1 text-left">Invoice</span>
-            <span className="material-symbols-outlined text-xl">{invoiceOpen ? "expand_less" : "expand_more"}</span>
-          </button>
-          {invoiceOpen && <div className="pl-8 space-y-1">
+          {invoiceOpen && <div className="workspace-subnav">
             {[{ to: "/hr/invoice/customers", label: "Customers" }, { to: "/hr/invoice/invoices", label: "Invoices" }].map(item =>
-              <NavLink key={item.to} to={item.to} onClick={close} className={({ isActive }) =>
-                `block px-3 py-2 rounded-lg text-body-md ${isActive ? "bg-primary text-white font-semibold" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>{item.label}</NavLink>)}
+              <NavLink key={item.to} to={item.to} onClick={close} className={({ isActive }) => `workspace-subnav-link${isActive ? " is-active" : ""}`}>{item.label}</NavLink>)}
           </div>}
-        </nav>
-
-        {/* User */}
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-white text-label-md font-bold">
-                {user?.name?.charAt(0) || "A"}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-white text-label-md font-semibold truncate">{user?.name}</p>
-              <p className="text-white/50 text-label-sm capitalize">{user?.role}</p>
-            </div>
-          </div>
-          {user?.role === "employee" && (
-            <a href="/onboarding"
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 text-body-md font-semibold transition-colors mb-2">
-              <span className="material-symbols-outlined text-xl">person</span>
-              Employee Portal
-            </a>
-          )}
-          <button onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white text-body-md transition-colors">
-            <span className="material-symbols-outlined text-xl">logout</span>
-            Sign Out
-          </button>
         </div>
-      </aside>
-    </>
-  );
+        {groups.slice(3).map(navGroup)}
+      </nav>
+      <div className="workspace-sidebar-footer">
+        <div className="workspace-user"><span className="workspace-user-avatar">{user?.name?.charAt(0) || "A"}</span><div><strong>{user?.name}</strong><span>{user?.role === "hr_admin" ? "HR admin" : user?.role}</span></div></div>
+        {user?.role === "employee" && <a className="workspace-footer-action" href="/onboarding"><ArrowRightLeft size={16} /> Employee Portal</a>}
+        <button className="workspace-footer-action" onClick={signOut}><LogOut size={16} /> Sign out</button>
+      </div>
+    </aside>
+  </>;
 };
