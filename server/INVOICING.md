@@ -2,6 +2,8 @@
 
 The Invoice menu is available to owners and HR administrators. Customers and invoice drafts are entered manually. Approving a draft locks it without sending an email, so its PDF can be printed and handed to the customer. Sending a draft also locks it. Customer and company details are saved at approval or first sending and remain unchanged if those details are later edited. An approved invoice can later be emailed or marked paid. Marking an invoice paid records a manual status change; it does not process a payment.
 
+Customers without invoices can be permanently deleted after confirmation. Customers linked to any invoice, including a draft, cannot be deleted; deleting a draft may make its customer eligible for deletion.
+
 An unpaid invoice in Approved or Sent status may be returned to Draft for editing; Paid invoices cannot. Returning it to draft clears the customer and company snapshots, so it uses current details when next approved or sent. For sent invoices, the existing secure link is invalidated immediately. Previously emailed PDFs cannot be recalled, and those PDFs and printed copies may no longer match. Activity is retained unless the draft is permanently deleted; invoice numbers are not reused.
 
 ## Deployment

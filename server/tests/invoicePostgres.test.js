@@ -88,13 +88,29 @@ test('invoice lifecycle with isolated PostgreSQL and stubbed email', { skip: !co
     assert.equal((await req('/view', 'POST', { token: 'bad' }, null)).status, 404);
     const customer = await req('/customers', 'POST', { name: 'Customer', email: 'customer@example.test', address: 'Old address' });
     assert.equal(customer.status, 201);
+    const unused = await req('/customers', 'POST', { name: 'Unused', email: 'unused@example.test' });
+    assert.equal((await req('/customers')).data.find(c => c.id === unused.data.id).invoiceCount, 0);
+    assert.equal((await req(`/customers/${unused.data.id}`, 'DELETE', null, employee)).status, 403);
+    assert.equal((await req(`/customers/${unused.data.id}`, 'DELETE', null, null)).status, 401);
+    assert.equal((await req(`/customers/${unused.data.id}`, 'DELETE', null, hr)).status, 200);
+    assert.equal((await req(`/customers/${unused.data.id}`, 'DELETE')).status, 404);
+    assert.equal((await req('/customers/not-a-uuid', 'DELETE')).status, 400);
     const draft = { customerId: customer.data.id, invoiceDate: '2026-11-16', dueDate: '2026-12-16',
       items: [{ description: 'Trip', serviceDate: '2026-11-15', quantity: 3, rateCents: 12505 }],
       adjustmentCents: -500, orderNumber: 'PO-1', subject: 'Transport', paymentTerms: 'Net 30', termsConditions: 'Terms',
       notes: 'Thank you', paymentInstructions: 'Bank transfer' };
+    const temporaryCustomer = (await req('/customers', 'POST', { name: 'Temporary', email: 'temp@example.test' })).data;
+    const temporaryInvoice = (await req('/', 'POST', { ...draft, customerId: temporaryCustomer.id })).data.id;
+    assert.equal((await req(`/customers/${temporaryCustomer.id}`, 'DELETE')).status, 409);
+    assert.equal((await req(`/${temporaryInvoice}`, 'DELETE')).status, 200);
+    assert.equal((await req('/customers')).data.find(c => c.id === temporaryCustomer.id).invoiceCount, 0);
+    assert.equal((await req(`/customers/${temporaryCustomer.id}`, 'DELETE')).status, 200);
     assert.equal((await req('/', 'POST', { ...draft, dueDate: '2025-01-01' })).status, 400);
     const printDraft = await req('/', 'POST', draft);
     const printId = printDraft.data.id;
+    assert.equal((await req('/customers')).data.find(c => c.id === customer.data.id).invoiceCount, 1);
+    assert.equal((await req(`/customers/${customer.data.id}`, 'DELETE')).status, 409);
+    assert.equal((await req(`/${printId}`)).data.customer.name, 'Customer');
     assert.equal((await req(`/${printId}/paid`, 'POST')).status, 400);
     assert.equal((await req(`/${printId}/approve`, 'POST', null, employee)).status, 403);
     assert.equal((await req(`/${printId}/approve`, 'POST')).status, 200);

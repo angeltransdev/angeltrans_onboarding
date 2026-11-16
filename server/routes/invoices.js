@@ -58,7 +58,9 @@ router.param('id', (req, res, next, value) => {
 });
 
 router.get('/customers', asyncRoute(async (req, res) => {
-  const { rows } = await db.query('SELECT id, name, email, address, phone FROM invoice_customers ORDER BY name, id');
+  const { rows } = await db.query(`SELECT c.id, c.name, c.email, c.address, c.phone,
+    (SELECT COUNT(*)::int FROM invoices i WHERE i.customer_id=c.id) AS "invoiceCount"
+    FROM invoice_customers c ORDER BY c.name, c.id`);
   res.json(rows);
 }));
 router.post('/customers', asyncRoute(async (req, res) => {
@@ -71,6 +73,20 @@ router.put('/customers/:id', asyncRoute(async (req, res) => {
   const { rows } = await db.query('UPDATE invoice_customers SET name=$1,email=$2,address=$3,phone=$4,updated_at=NOW() WHERE id=$5 RETURNING id,name,email,address,phone', [c.name, c.email, c.address, c.phone, req.params.id]);
   if (!rows.length) return res.status(404).json({ message: 'Customer not found.' });
   res.json(rows[0]);
+}));
+router.delete('/customers/:id', asyncRoute(async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const customer = await client.query('SELECT id FROM invoice_customers WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!customer.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Customer not found.' }); }
+    const invoices = await client.query('SELECT 1 FROM invoices WHERE customer_id=$1 LIMIT 1', [req.params.id]);
+    if (invoices.rows.length) { await client.query('ROLLBACK'); return res.status(409).json({ message: 'This customer has invoices and cannot be deleted.' }); }
+    await client.query('DELETE FROM invoice_customers WHERE id=$1', [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ message: 'Customer deleted.' });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
 }));
 router.get('/', asyncRoute(async (req, res) => {
   const { rows } = await db.query(`SELECT ${columns}, (SELECT MAX(created_at) FROM invoice_activity WHERE invoice_id=i.id AND event='Viewed'

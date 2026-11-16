@@ -1,0 +1,40 @@
+.customer-table-wrap { overflow-x: auto; }
+.customer-table { min-width: 760px; }
+.customer-identity { display: flex; align-items: center; gap: 12px; min-width: 160px; }
+.customer-identity strong { color: #263745; font-size: .82rem; overflow-wrap: anywhere; }
+.customer-avatar { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: #f9eded; color: #963039; font-size: .85rem; font-weight: 800; }
+.customer-count { display: inline-block; color: #6a7b88; font-size: .72rem; white-space: nowrap; }
+.customer-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.customer-action { display: inline-flex; align-items: center; gap: 5px; color: #922b33; font-size: .75rem; font-weight: 700; }
+.customer-action:hover:not(:disabled) { text-decoration: underline; }
+.customer-action-delete { color: #a33b43; }
+.customer-action:disabled, .customer-close:disabled, .customer-button-secondary:disabled, .customer-dialog .invoice-create-button:disabled { opacity: .5; cursor: not-allowed; }
+.customer-protected { color: #84919b; font-size: .7rem; }
+.customer-cards { display: none; }
+.customer-dialog { width: min(540px, calc(100% - 32px)); max-height: min(90vh, 760px); padding: 0; border: 0; border-radius: 15px; color: #253545; background: #fff; box-shadow: 0 24px 80px rgba(18, 30, 43, .28); }
+.customer-dialog::backdrop { background: rgba(18, 30, 43, .55); }
+.customer-dialog-header { display: flex; justify-content: space-between; gap: 16px; padding: 24px 26px 20px; border-bottom: 1px solid #edf1f3; }
+.customer-dialog-header h2 { margin-top: 6px; color: #1d2b39; font-size: 1.25rem; font-weight: 800; letter-spacing: -.025em; }
+.customer-dialog-header p:not(.invoice-list-kicker) { margin-top: 6px; color: #81909c; font-size: .78rem; }
+.customer-close { align-self: flex-start; padding: 6px; border-radius: 7px; color: #71818e; }
+.customer-close:hover:not(:disabled) { background: #f2f5f7; }
+.customer-dialog-body { display: grid; gap: 16px; padding: 22px 26px; }
+.customer-dialog-body .invoice-field { display: block; }
+.customer-dialog-body .invoice-input { display: block; margin-top: 7px; }
+.customer-dialog-body textarea { resize: vertical; }
+.customer-required, .customer-optional { margin-left: 5px; color: #8c9aa5; font-size: .68rem; font-weight: 400; }
+.customer-dialog-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 17px 26px; border-top: 1px solid #edf1f3; background: #fbfcfd; }
+.customer-button-secondary { min-height: 44px; padding: .7rem 1rem; border: 1px solid #dfe6eb; border-radius: 9px; color: #485b69; background: #fff; font-size: .82rem; font-weight: 700; }
+.customer-button-secondary:hover:not(:disabled) { background: #f5f7f9; }
+.customer-action:focus-visible, .customer-close:focus-visible, .customer-button-secondary:focus-visible { outline: 3px solid #e8b3b6; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .customer-table-wrap { display: none; }
+  .customer-cards { display: block; border-top: 1px solid #edf1f3; }
+  .customer-card { display: grid; gap: 12px; padding: 17px 16px; border-bottom: 1px solid #eff2f5; }
+  .customer-card .customer-count { display: block; margin-top: 4px; }
+  .customer-card-contact { display: flex; align-items: center; gap: 8px; color: #657585; font-size: .77rem; overflow-wrap: anywhere; }
+  .customer-card-contact svg { flex: none; color: #9aa8b2; }
+  .customer-card-phone { padding-left: 23px; color: #657585; font-size: .77rem; }
+  .customer-dialog-header, .customer-dialog-body { padding-inline: 20px; }
+  .customer-dialog-footer { padding-inline: 20px; }
+}
