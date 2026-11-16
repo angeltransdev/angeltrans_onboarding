@@ -2,7 +2,7 @@
 
 The Invoice menu is available to owners and HR administrators. Customers and invoice drafts are entered manually. Approving a draft locks it without sending an email, so its PDF can be printed and handed to the customer. Sending a draft also locks it. Customer and company details are saved at approval or first sending and remain unchanged if those details are later edited. An approved invoice can later be emailed or marked paid. Marking an invoice paid records a manual status change; it does not process a payment.
 
-An unpaid invoice in Approved status may be returned to Draft for editing; Sent and Paid invoices cannot. Returning it to draft clears the customer and company snapshots, so it uses current details when next approved or sent. Previously printed copies may no longer match. Drafts can be permanently deleted, including their activity history; invoice numbers are not reused.
+An unpaid invoice in Approved or Sent status may be returned to Draft for editing; Paid invoices cannot. Returning it to draft clears the customer and company snapshots, so it uses current details when next approved or sent. For sent invoices, the existing secure link is invalidated immediately. Previously emailed PDFs cannot be recalled, and those PDFs and printed copies may no longer match. Activity is retained unless the draft is permanently deleted; invoice numbers are not reused.
 
 ## Deployment
 
@@ -18,6 +18,6 @@ Run `npm run test:invoices` in the server directory for validation and PDF tests
 
 ## Tracking and privacy
 
-Sending attaches a PDF and provides a bearer link. Anyone with the link can see the invoice; share it carefully. A view is recorded only when someone follows the link and clicks **View invoice**. Email image opens and local PDF opens cannot be tracked. Resending replaces the previous link, including links in previously sent emails. The link continues to work after the invoice is marked paid.
+Sending attaches a PDF and provides a bearer link. Anyone with the link can see the invoice; share it carefully. A view is recorded only when someone follows the link and clicks **View invoice**. The invoice list's Viewed indicator reflects views of the latest link, while older views remain in the activity history. Email image opens and local PDF opens cannot be tracked. Resending replaces the previous link, including links in previously sent emails. The link continues to work after the invoice is marked paid.
 
 If delivery cannot be confirmed, check with the customer before retrying: an email could have been delivered even if the request or database transaction failed, and its link may not work. The server logs details for investigation.

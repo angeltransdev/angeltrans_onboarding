@@ -1,7 +1,7 @@
 import api from "../../services/api";
 
 export function confirmInvoiceAction(invoice, type) {
-  const question = type === "return-to-draft" ? "Return this invoice to draft? It can be edited or deleted. Previously printed copies may no longer match, and current customer and company details will be used when it is approved again."
+  const question = type === "return-to-draft" ? `Return this invoice to draft? It can be edited or deleted. ${invoice.status === "Sent" ? "The customer's existing viewing link will stop working. Previously emailed PDFs cannot be recalled and may no longer match. " : ""}Previously printed copies may no longer match, and current customer and company details will be used when it is approved or sent again.`
     : type === "approve" ? "Approve this invoice? It will be locked against editing and can be printed, emailed, or marked paid."
     : type === "send" ? `Email this invoice to ${invoice.customer.email}? Sending locks the invoice; resending invalidates the previous viewing link.`
     : type === "delete" ? `Permanently delete draft invoice #${invoice.number} and its activity history? This cannot be undone.`

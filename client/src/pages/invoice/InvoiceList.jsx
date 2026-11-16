@@ -13,7 +13,7 @@ function InvoiceActions({ invoice, disabled, busy, onAction }) {
       <option value="" disabled>{busy ? "Working..." : "Actions"}</option>
       {invoice.status === "Draft" && <option value="edit">Edit draft</option>}
       {invoice.status === "Draft" && <option value="approve">Approve invoice</option>}
-      {invoice.status === "Approved" && <option value="return-to-draft">Return to draft</option>}
+      {["Approved", "Sent"].includes(invoice.status) && <option value="return-to-draft">Return to draft</option>}
       <option value="download">Download PDF</option>
       {invoice.status !== "Paid" && <option value="send">{invoice.status === "Sent" ? "Resend email" : "Send email"}</option>}
       {["Approved", "Sent"].includes(invoice.status) && <option value="paid">Mark paid</option>}
@@ -92,7 +92,7 @@ export default function InvoiceList() {
             <div className="invoice-list-card-meta"><span>Due {i.dueDate}</span><strong>{money(i.totalCents)}</strong></div>
             <InvoiceActions invoice={i} disabled={busyId !== null} busy={busyId === i.id} onAction={handleAction} />
           </article>)}</div></>}
-      <p className="invoice-list-footnote">Viewed means a customer selected “View invoice” on the secure link. PDF and email opens are not tracked.</p>
+      <p className="invoice-list-footnote">Viewed means a customer selected “View invoice” on the latest secure link. PDF and email opens are not tracked.</p>
     </section>
   </Layout>;
 }

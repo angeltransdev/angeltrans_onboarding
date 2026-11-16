@@ -47,7 +47,7 @@ export default function InvoiceDetails() {
         <Link className="btn-secondary" to="/hr/invoice/invoices">Back</Link>
         {invoice.status === "Draft" && <Link className="btn-secondary" to={`/hr/invoice/invoices/${id}/edit`}>Edit draft</Link>}
         {invoice.status === "Draft" && <button className="btn-primary" disabled={busy} onClick={() => action("approve")}>Approve invoice</button>}
-        {invoice.status === "Approved" && <button className="btn-secondary" disabled={busy} onClick={() => action("return-to-draft")}>Return to draft</button>}
+        {["Approved", "Sent"].includes(invoice.status) && <button className="btn-secondary" disabled={busy} onClick={() => action("return-to-draft")}>Return to draft</button>}
         <button className="btn-secondary" disabled={busy} onClick={download}>Download PDF</button>
         {invoice.status !== "Paid" && <button className={invoice.status === "Draft" ? "btn-secondary" : "btn-primary"} disabled={busy} onClick={() => action("send")}>{invoice.status === "Sent" ? "Resend email" : "Send email"}</button>}
         {["Approved", "Sent"].includes(invoice.status) && <button className="btn-secondary" disabled={busy} onClick={() => action("paid")}>Mark paid</button>}
